@@ -2,127 +2,28 @@
 
 import { FormEvent, useState } from "react";
 
-type Vehicle = {
-  vin: string;
-  year: string;
-  make: string;
-  model: string;
-  trim: string;
-  bodyStyle: string;
-  drivetrain: string;
-  engine: string;
-};
+type Vehicle = { vin:string; year:string; make:string; model:string; trim:string; bodyStyle:string; drivetrain:string; engine:string };
+type Step = "lookup" | "vehicle" | "mileage" | "condition" | "payoff";
 
-const Brand = ({ footer = false }: { footer?: boolean }) => (
-  <a className={`brand ${footer ? "footerBrand" : ""}`} href="#top" aria-label="228 Sell Us Your Car home">
-    <img className="brandLogo" src="/228-logo.jpg" alt="228 Sell Us Your Car" />
-  </a>
-);
+const Brand=({footer=false}:{footer?:boolean})=><a className={`brand ${footer?"footerBrand":""}`} href="#top" aria-label="228 Sell Us Your Car home"><img className="brandLogo" src="/228-logo.jpg" alt="228 Sell Us Your Car" /></a>;
 
-export default function Home() {
-  const [lookupType, setLookupType] = useState<"vin" | "plate">("vin");
-  const [value, setValue] = useState("");
-  const [vehicle, setVehicle] = useState<Vehicle | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  async function startOffer(e: FormEvent) {
-    e.preventDefault();
-    setError("");
-    setVehicle(null);
-
-    if (lookupType === "plate") {
-      setError("License plate lookup is coming next. For now, enter the 17-character VIN.");
-      return;
-    }
-
-    const vin = value.trim().toUpperCase();
-    if (vin.length !== 17) {
-      setError("Please enter the full 17-character VIN.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const response = await fetch("/api/decode-vin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vin }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "We couldn't decode that VIN.");
-      setVehicle(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "We couldn't decode that VIN.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function resetVehicle() {
-    setVehicle(null);
-    setError("");
-  }
-
-  return (
-    <main>
-      <header className="nav shell">
-        <Brand />
-        <nav><a href="#how">How It Works</a><a href="#why">Why 228?</a><a className="navCta" href="#offer">Get My Offer</a></nav>
-      </header>
-
-      <section className="hero" id="top">
-        <div className="shell heroGrid">
-          <div className="heroCopy">
-            <p className="eyebrow">MISSISSIPPI GULF COAST CAR BUYING</p>
-            <h1>Sell your car.<br /><span>Skip the runaround.</span></h1>
-            <p className="heroText">Get a fast, straightforward offer for your vehicle. No purchase required. No pressure. Just a simple way to sell your car.</p>
-            <div className="trustRow"><span>✓ Free appraisal</span><span>✓ We handle payoffs</span><span>✓ Local team</span></div>
-          </div>
-
-          <div className="offerCard" id="offer">
-            {!vehicle ? (
-              <>
-                <p className="cardKicker">START YOUR OFFER</p>
-                <h2>What are you selling?</h2>
-                <div className="toggle">
-                  <button type="button" className={lookupType === "vin" ? "active" : ""} onClick={() => { setLookupType("vin"); setError(""); }}>VIN</button>
-                  <button type="button" className={lookupType === "plate" ? "active" : ""} onClick={() => { setLookupType("plate"); setError(""); }}>License Plate</button>
-                </div>
-                <form onSubmit={startOffer}>
-                  <label htmlFor="vehicle-id">{lookupType === "vin" ? "Enter your VIN" : "Enter your plate number"}</label>
-                  <input id="vehicle-id" value={value} onChange={(e) => setValue(e.target.value.toUpperCase())} maxLength={lookupType === "vin" ? 17 : 12} placeholder={lookupType === "vin" ? "17-character VIN" : "ABC 1234"} autoComplete="off" />
-                  {error && <p className="formError">{error}</p>}
-                  <button className="primaryBtn" type="submit" disabled={loading}>{loading ? "LOOKING UP YOUR VEHICLE..." : "GET MY OFFER →"}</button>
-                </form>
-                <p className="finePrint">Takes about 2 minutes. No obligation.</p>
-              </>
-            ) : (
-              <div className="vehicleState">
-                <div className="checkCircle">✓</div>
-                <p className="cardKicker">WE FOUND YOUR VEHICLE</p>
-                <h2>{vehicle.year} {vehicle.make} {vehicle.model}</h2>
-                {vehicle.trim && <p className="vehicleTrim">{vehicle.trim}</p>}
-                <div className="vehicleDetails">
-                  {vehicle.bodyStyle && <span>{vehicle.bodyStyle}</span>}
-                  {vehicle.engine && <span>{vehicle.engine}</span>}
-                  {vehicle.drivetrain && <span>{vehicle.drivetrain}</span>}
-                </div>
-                <p className="vinDisplay">VIN: {vehicle.vin}</p>
-                <h3>Is this your vehicle?</h3>
-                <button className="primaryBtn" type="button" onClick={() => alert("Mileage step is next!")}>YES, CONTINUE →</button>
-                <button className="vehicleBack" type="button" onClick={resetVehicle}>No, let me re-enter the VIN</button>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="statsBand"><div className="shell statsGrid"><div><strong>2 MIN</strong><span>to start your appraisal</span></div><div><strong>$0</strong><span>cost to get an offer</span></div><div><strong>0</strong><span>purchase required</span></div></div></section>
-      <section className="section shell" id="how"><div className="sectionHeading"><p className="eyebrow dark">HOW IT WORKS</p><h2>Three steps. That’s it.</h2><p>We designed the process to be fast enough to do from your phone and simple enough to know exactly what happens next.</p></div><div className="stepsGrid"><article><span className="stepNum">01</span><h3>Tell us about your car</h3><p>Enter your VIN or plate, mileage, condition, and a few quick details.</p></article><article><span className="stepNum">02</span><h3>Get your offer</h3><p>Our local buying team reviews your vehicle and gives you a straightforward offer.</p></article><article><span className="stepNum">03</span><h3>Get paid</h3><p>Bring us the vehicle, we verify the details, handle the paperwork, and complete the purchase.</p></article></div></section>
-      <section className="whySection" id="why"><div className="shell whyGrid"><div><p className="eyebrow">WHY SELL TO 228?</p><h2>We buy cars.<br />Not just trades.</h2><p className="whyLead">You do not have to buy another vehicle from us. If you just want to sell your car and walk away, that is completely fine.</p><a className="textLink" href="#offer">Start my offer →</a></div><div className="benefits"><div><span>01</span><h3>Financed? No problem.</h3><p>We can work with your lender and handle the payoff process.</p></div><div><span>02</span><h3>Local people, real answers.</h3><p>Your appraisal is handled by a local buying team — not a faceless national call center.</p></div><div><span>03</span><h3>No pressure to trade.</h3><p>Sell us your vehicle whether you are replacing it today, later, or not at all.</p></div></div></div></section>
-      <section className="ctaSection"><div className="shell ctaBox"><div><p className="eyebrow">READY WHEN YOU ARE</p><h2>See what your car is worth.</h2></div><a className="lightBtn" href="#offer">GET MY OFFER →</a></div></section>
-      <footer><div className="shell footerGrid"><Brand footer /><p>Serving Gulfport, Biloxi, D'Iberville, Ocean Springs, Long Beach and the Mississippi Gulf Coast.</p><p className="copyright">© 2026 228 Sell Us Your Car. All rights reserved.</p></div></footer>
-    </main>
-  );
+export default function Home(){
+ const[lookupType,setLookupType]=useState<"vin"|"plate">("vin"); const[value,setValue]=useState(""); const[vehicle,setVehicle]=useState<Vehicle|null>(null); const[loading,setLoading]=useState(false); const[error,setError]=useState(""); const[step,setStep]=useState<Step>("lookup"); const[mileage,setMileage]=useState(""); const[condition,setCondition]=useState(""); const[payoff,setPayoff]=useState("");
+ async function startOffer(e:FormEvent){e.preventDefault();setError("");if(lookupType==="plate"){setError("License plate lookup is coming next. For now, enter the 17-character VIN.");return}const vin=value.trim().toUpperCase();if(vin.length!==17){setError("Please enter the full 17-character VIN.");return}setLoading(true);try{const response=await fetch("/api/decode-vin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({vin})});const data=await response.json();if(!response.ok)throw new Error(data.error||"We couldn't decode that VIN.");setVehicle(data);setStep("vehicle")}catch(err){setError(err instanceof Error?err.message:"We couldn't decode that VIN.")}finally{setLoading(false)}}
+ function resetVehicle(){setVehicle(null);setError("");setStep("lookup")}
+ function submitMileage(e:FormEvent){e.preventDefault();const n=Number(mileage.replace(/,/g,""));if(!n||n<1){setError("Enter the vehicle's current mileage.");return}setMileage(n.toLocaleString());setError("");setStep("condition")}
+ const progress=step==="vehicle"?20:step==="mileage"?40:step==="condition"?60:step==="payoff"?80:0;
+ return <main><header className="nav shell"><Brand/><nav><a href="#how">How It Works</a><a href="#why">Why 228?</a><a className="navCta" href="#offer">Get My Offer</a></nav></header>
+ <section className="hero" id="top"><div className="shell heroGrid"><div className="heroCopy"><p className="eyebrow">MISSISSIPPI GULF COAST CAR BUYING</p><h1>Sell your car.<br/><span>Skip the runaround.</span></h1><p className="heroText">Get a fast, straightforward offer for your vehicle. No purchase required. No pressure. Just a simple way to sell your car.</p><div className="trustRow"><span>✓ Free appraisal</span><span>✓ We handle payoffs</span><span>✓ Local team</span></div></div>
+ <div className="offerCard" id="offer">{step!=="lookup"&&<><div className="progress"><span style={{width:`${progress}%`}}/></div><p className="stepLabel">STEP {Math.ceil(progress/20)} OF 5</p></>}
+ {step==="lookup"&&<><p className="cardKicker">START YOUR OFFER</p><h2>What are you selling?</h2><div className="toggle"><button type="button" className={lookupType==="vin"?"active":""} onClick={()=>{setLookupType("vin");setError("")}}>VIN</button><button type="button" className={lookupType==="plate"?"active":""} onClick={()=>{setLookupType("plate");setError("")}}>License Plate</button></div><form onSubmit={startOffer}><label htmlFor="vehicle-id">{lookupType==="vin"?"Enter your VIN":"Enter your plate number"}</label><input id="vehicle-id" value={value} onChange={e=>setValue(e.target.value.toUpperCase())} maxLength={lookupType==="vin"?17:12} placeholder={lookupType==="vin"?"17-character VIN":"ABC 1234"}/>{error&&<p className="formError">{error}</p>}<button className="primaryBtn" disabled={loading}>{loading?"LOOKING UP YOUR VEHICLE...":"GET MY OFFER →"}</button></form><p className="finePrint">Takes about 2 minutes. No obligation.</p></>}
+ {step==="vehicle"&&vehicle&&<div className="vehicleState"><div className="checkCircle">✓</div><p className="cardKicker">WE FOUND YOUR VEHICLE</p><h2>{vehicle.year} {vehicle.make} {vehicle.model}</h2>{vehicle.trim&&<p className="vehicleTrim">{vehicle.trim}</p>}<div className="vehicleDetails">{vehicle.bodyStyle&&<span>{vehicle.bodyStyle}</span>}{vehicle.engine&&<span>{vehicle.engine}</span>}{vehicle.drivetrain&&<span>{vehicle.drivetrain}</span>}</div><p className="vinDisplay">VIN: {vehicle.vin}</p><h3>Is this your vehicle?</h3><button className="primaryBtn" onClick={()=>setStep("mileage")}>YES, CONTINUE →</button><button className="vehicleBack" onClick={resetVehicle}>No, let me re-enter the VIN</button></div>}
+ {step==="mileage"&&<div className="questionState"><p className="cardKicker">CURRENT MILEAGE</p><h2>How many miles are on it?</h2><p className="questionHelp">An estimate is fine if you don't know the exact number.</p><form onSubmit={submitMileage}><label htmlFor="mileage">Mileage</label><div className="mileageInput"><input id="mileage" inputMode="numeric" value={mileage} onChange={e=>setMileage(e.target.value.replace(/[^0-9]/g,""))} placeholder="e.g. 42,500"/><span>MILES</span></div>{error&&<p className="formError">{error}</p>}<button className="primaryBtn">CONTINUE →</button></form><button className="vehicleBack" onClick={()=>setStep("vehicle")}>← Back</button></div>}
+ {step==="condition"&&<div className="questionState"><p className="cardKicker">VEHICLE CONDITION</p><h2>How would you describe it?</h2><p className="questionHelp">Don't overthink it — we'll verify everything in person.</p><div className="choiceGrid">{[["Excellent","Looks nearly new. No major cosmetic or mechanical issues."],["Good","Normal wear for the age and mileage. Runs and drives well."],["Fair","Noticeable wear, dents, scratches, warning lights, or repairs needed."],["Needs Work","Major mechanical, body, or drivability issues."]].map(([title,desc])=><button key={title} className={condition===title?"choice activeChoice":"choice"} onClick={()=>{setCondition(title);setStep("payoff")}}><strong>{title}</strong><span>{desc}</span></button>)}</div><button className="vehicleBack" onClick={()=>setStep("mileage")}>← Back</button></div>}
+ {step==="payoff"&&<div className="questionState"><p className="cardKicker">OWNERSHIP</p><h2>Do you still owe money on it?</h2><p className="questionHelp">No problem if you do. We handle lender payoffs every day.</p><div className="choiceGrid two">{["Yes, I have a payoff","No, it's paid off"].map(x=><button key={x} className={payoff===x?"choice activeChoice":"choice"} onClick={()=>setPayoff(x)}><strong>{x}</strong></button>)}</div>{payoff&&<div className="nextPreview"><strong>Nice — next up: photos & contact info.</strong><span>We'll build that screen next.</span></div>}<button className="vehicleBack" onClick={()=>setStep("condition")}>← Back</button></div>}
+ </div></div></section>
+ <section className="statsBand"><div className="shell statsGrid"><div><strong>2 MIN</strong><span>to start your appraisal</span></div><div><strong>$0</strong><span>cost to get an offer</span></div><div><strong>0</strong><span>purchase required</span></div></div></section>
+ <section className="section shell" id="how"><div className="sectionHeading"><p className="eyebrow dark">HOW IT WORKS</p><h2>Three steps. That’s it.</h2><p>We designed the process to be fast enough to do from your phone and simple enough to know exactly what happens next.</p></div><div className="stepsGrid"><article><span className="stepNum">01</span><h3>Tell us about your car</h3><p>Enter your VIN or plate, mileage, condition, and a few quick details.</p></article><article><span className="stepNum">02</span><h3>Get your offer</h3><p>Our local buying team reviews your vehicle and gives you a straightforward offer.</p></article><article><span className="stepNum">03</span><h3>Get paid</h3><p>Bring us the vehicle, we verify the details, handle the paperwork, and complete the purchase.</p></article></div></section>
+ <section className="whySection" id="why"><div className="shell whyGrid"><div><p className="eyebrow">WHY SELL TO 228?</p><h2>We buy cars.<br/>Not just trades.</h2><p className="whyLead">You do not have to buy another vehicle from us. If you just want to sell your car and walk away, that is completely fine.</p><a className="textLink" href="#offer">Start my offer →</a></div><div className="benefits"><div><span>01</span><h3>Financed? No problem.</h3><p>We can work with your lender and handle the payoff process.</p></div><div><span>02</span><h3>Local people, real answers.</h3><p>Your appraisal is handled by a local buying team — not a faceless national call center.</p></div><div><span>03</span><h3>No pressure to trade.</h3><p>Sell us your vehicle whether you are replacing it today, later, or not at all.</p></div></div></div></section>
+ <section className="ctaSection"><div className="shell ctaBox"><div><p className="eyebrow">READY WHEN YOU ARE</p><h2>See what your car is worth.</h2></div><a className="lightBtn" href="#offer">GET MY OFFER →</a></div></section><footer><div className="shell footerGrid"><Brand footer/><p>Serving Gulfport, Biloxi, D'Iberville, Ocean Springs, Long Beach and the Mississippi Gulf Coast.</p><p className="copyright">© 2026 228 Sell Us Your Car. All rights reserved.</p></div></footer></main>
 }
