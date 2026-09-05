@@ -1,11 +1,73 @@
 "use client";
-import {FormEvent,useState} from "react";
+import {FormEvent,useRef,useState} from "react";
+import { isVinCueLeadId, parseAppraisal } from "../lib/appraisal";
 type Vehicle={vin:string;year:string;make:string;model:string;trim:string;bodyStyle:string;drivetrain:string;engine:string};type Step="lookup"|"vehicle"|"mileage"|"condition"|"payoff"|"photos"|"contact"|"done";
 const Brand=({footer=false}:{footer?:boolean})=><a className={`brand ${footer?"footerBrand":""}`} href="#top"><img className="brandLogo" src="/228-logo.jpg" alt="228 Sell Us Your Car"/></a>;
 export default function Home(){const[lookupType,setLookupType]=useState<"vin"|"plate">("vin"),[value,setValue]=useState(""),[vehicle,setVehicle]=useState<Vehicle|null>(null),[loading,setLoading]=useState(false),[error,setError]=useState(""),[step,setStep]=useState<Step>("lookup"),[mileage,setMileage]=useState(""),[condition,setCondition]=useState(""),[payoff,setPayoff]=useState(""),[photos,setPhotos]=useState<File[]>([]),[name,setName]=useState(""),[phone,setPhone]=useState(""),[email,setEmail]=useState("");
+const [submitting, setSubmitting] = useState(false);
+const [leadId, setLeadId] = useState("");
+const [submissionUnknown, setSubmissionUnknown] = useState(false);
+const submissionLock = useRef(false);
 async function startOffer(e:FormEvent){e.preventDefault();setError("");if(lookupType==="plate"){setError("License plate lookup is coming next. For now, enter the 17-character VIN.");return}const vin=value.trim().toUpperCase();if(vin.length!==17){setError("Please enter the full 17-character VIN.");return}setLoading(true);try{const r=await fetch("/api/decode-vin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({vin})}),d=await r.json();if(!r.ok)throw new Error(d.error||"We couldn't decode that VIN.");setVehicle(d);setStep("vehicle")}catch(err){setError(err instanceof Error?err.message:"We couldn't decode that VIN.")}finally{setLoading(false)}}
 function submitMileage(e:FormEvent){e.preventDefault();const n=Number(mileage.replace(/,/g,""));if(!n||n<1){setError("Enter the vehicle's current mileage.");return}setMileage(n.toLocaleString());setError("");setStep("condition")}
-function submitContact(e:FormEvent){e.preventDefault();if(name.trim().length<2||phone.replace(/\D/g,"").length<10){setError("Please enter your name and a valid phone number.");return}setError("");setStep("done")}
+async function submitContact(e: FormEvent) {
+  e.preventDefault();
+  if (submissionLock.current || submissionUnknown) return;
+  setError("");
+  let payload;
+  try {
+    payload = parseAppraisal({
+      vehicle,
+      mileage: Number(mileage.replace(/,/g, "")),
+      condition,
+      payoff,
+      contact: { fullName: name, phone, email },
+      photos: { selectedCount: photos.length },
+      appraisalContactConsent: true,
+    });
+  } catch (err) {
+    setError(err instanceof Error ? err.message : "Please check your appraisal details.");
+    return;
+  }
+  submissionLock.current = true;
+  setSubmitting(true);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 35000);
+  try {
+    const response = await fetch("/api/leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+      redirect: "error",
+    });
+    const result = await response.json();
+    if (response.status === 201 && result?.ok === true && isVinCueLeadId(result.leadId)) {
+      setLeadId(result.leadId);
+      setStep("done");
+      return;
+    }
+    // Only a recognized negative acknowledgement permits another attempt.
+    // Unknown/network outcomes can follow acceptance by the provider.
+    const retryableStatus: Record<string, number> = {
+      invalid_appraisal: 400, invalid_json: 400, invalid_origin: 403,
+      payload_too_large: 413, unsupported_content_type: 415,
+      integration_unavailable: 503, submission_rejected: 422,
+    };
+    if (!response.ok && result?.ok === false && result.retryable === true && retryableStatus[result.code] === response.status && typeof result.error === "string") {
+      setError(result.error);
+      return;
+    }
+    throw new Error("Unconfirmed submission");
+  } catch {
+    setSubmissionUnknown(true);
+    setError("We couldn't confirm whether your appraisal was received. Please contact the 228 team before submitting again.");
+  } finally {
+    window.clearTimeout(timeout);
+    submissionLock.current = false;
+    setSubmitting(false);
+  }
+}
 const progress:{[key:string]:number}={vehicle:14,mileage:28,condition:42,payoff:56,photos:70,contact:86,done:100};
 return <main><header className="nav shell"><Brand/><nav><a href="#how">How It Works</a><a href="#why">Why 228?</a><a className="navCta" href="#offer">Get My Offer</a></nav></header><section className="hero" id="top"><div className="shell heroGrid"><div className="heroCopy"><p className="eyebrow">MISSISSIPPI GULF COAST CAR BUYING</p><h1>Sell your car.<br/><span>Skip the runaround.</span></h1><p className="heroText">Get a fast, straightforward offer for your vehicle. No purchase required. No pressure. Just a simple way to sell your car.</p><div className="trustRow"><span>✓ Free appraisal</span><span>✓ We handle payoffs</span><span>✓ Local team</span></div></div><div className="offerCard" id="offer">{step!=="lookup"&&<><div className="progress"><span style={{width:`${progress[step]}%`}}/></div><p className="stepLabel">{step==="done"?"SUBMITTED":"APPRAISAL IN PROGRESS"}</p></>}
 {step==="lookup"&&<><p className="cardKicker">START YOUR OFFER</p><h2>What are you selling?</h2><div className="toggle"><button className={lookupType==="vin"?"active":""} onClick={()=>{setLookupType("vin");setError("")}}>VIN</button><button className={lookupType==="plate"?"active":""} onClick={()=>{setLookupType("plate");setError("")}}>License Plate</button></div><form onSubmit={startOffer}><label>Enter your {lookupType==="vin"?"VIN":"plate number"}</label><input value={value} onChange={e=>setValue(e.target.value.toUpperCase())} maxLength={lookupType==="vin"?17:12} placeholder={lookupType==="vin"?"17-character VIN":"ABC 1234"}/>{error&&<p className="formError">{error}</p>}<button className="primaryBtn" disabled={loading}>{loading?"LOOKING UP YOUR VEHICLE...":"GET MY OFFER →"}</button></form><p className="finePrint">Takes about 2 minutes. No obligation.</p></>}
@@ -13,7 +75,23 @@ return <main><header className="nav shell"><Brand/><nav><a href="#how">How It Wo
 {step==="mileage"&&<div className="questionState"><p className="cardKicker">CURRENT MILEAGE</p><h2>How many miles are on it?</h2><p className="questionHelp">An estimate is fine.</p><form onSubmit={submitMileage}><div className="mileageInput"><input inputMode="numeric" value={mileage} onChange={e=>setMileage(e.target.value.replace(/[^0-9]/g,""))} placeholder="e.g. 42,500"/><span>MILES</span></div>{error&&<p className="formError">{error}</p>}<button className="primaryBtn">CONTINUE →</button></form><button className="vehicleBack" onClick={()=>setStep("vehicle")}>← Back</button></div>}
 {step==="condition"&&<div className="questionState"><p className="cardKicker">VEHICLE CONDITION</p><h2>How would you describe it?</h2><p className="questionHelp">Don't overthink it — we'll verify it in person.</p><div className="choiceGrid">{[["Excellent","Nearly new. No major cosmetic or mechanical issues."],["Good","Normal wear. Runs and drives well."],["Fair","Dents, scratches, warning lights, or repairs needed."],["Needs Work","Major mechanical, body, or drivability issues."]].map(([t,d])=><button key={t} className="choice" onClick={()=>{setCondition(t);setStep("payoff")}}><strong>{t}</strong><span>{d}</span></button>)}</div><button className="vehicleBack" onClick={()=>setStep("mileage")}>← Back</button></div>}
 {step==="payoff"&&<div className="questionState"><p className="cardKicker">OWNERSHIP</p><h2>Do you still owe money on it?</h2><p className="questionHelp">No problem if you do. We handle lender payoffs every day.</p><div className="choiceGrid two">{["Yes, I have a payoff","No, it's paid off"].map(x=><button key={x} className="choice" onClick={()=>{setPayoff(x);setStep("photos")}}><strong>{x}</strong></button>)}</div><button className="vehicleBack" onClick={()=>setStep("condition")}>← Back</button></div>}
-{step==="photos"&&<div className="questionState"><p className="cardKicker">VEHICLE PHOTOS</p><h2>Show us your car.</h2><p className="questionHelp">Photos help our team make a better appraisal. You can also skip this and we'll inspect it in person.</p><label className="photoDrop"><strong>＋ ADD PHOTOS</strong><span>Exterior, interior, damage — whatever helps</span><input type="file" accept="image/*" multiple onChange={e=>setPhotos(Array.from(e.target.files||[]))}/></label>{photos.length>0&&<p className="photoCount">✓ {photos.length} photo{photos.length!==1?"s":""} selected</p>}<button className="primaryBtn" onClick={()=>setStep("contact")}>{photos.length?"CONTINUE →":"SKIP PHOTOS →"}</button><button className="vehicleBack" onClick={()=>setStep("payoff")}>← Back</button></div>}
-{step==="contact"&&<div className="questionState"><p className="cardKicker">LAST STEP</p><h2>Where should we send your offer?</h2><p className="questionHelp">A local 228 buying specialist will review your vehicle details.</p><form onSubmit={submitContact}><label>Your name</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="First & last name"/><label>Mobile phone</label><input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="(228) 555-1234"/><label>Email <span className="optional">optional</span></label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@email.com"/>{error&&<p className="formError">{error}</p>}<button className="primaryBtn">SUBMIT MY VEHICLE →</button></form><p className="consent">By submitting, you agree that 228 Sell Us Your Car may contact you about your appraisal by phone, text, or email.</p><button className="vehicleBack" onClick={()=>setStep("photos")}>← Back</button></div>}
-{step==="done"&&vehicle&&<div className="vehicleState"><div className="checkCircle">✓</div><p className="cardKicker">VEHICLE SUBMITTED</p><h2>You're all set, {name.split(" ")[0]}.</h2><p className="questionHelp">We have your {vehicle.year} {vehicle.make} {vehicle.model} with {mileage} miles. Our buying team can now review the details and follow up with you.</p><div className="summaryBox"><span><b>Condition</b>{condition}</span><span><b>Payoff</b>{payoff}</span><span><b>Photos</b>{photos.length?`${photos.length} selected`:"Not provided"}</span></div><p className="importantNote">Demo submission is complete. Next we'll connect this to the system that actually receives your leads.</p></div>}</div></div></section>
+{step==="photos"&&<div className="questionState"><p className="cardKicker">VEHICLE PHOTOS</p><h2>Show us your car.</h2><p className="questionHelp">Photos help our team make a better appraisal. You can also skip this and we'll inspect it in person.</p><label className="photoDrop"><strong>＋ ADD PHOTOS</strong><span>Exterior, interior, damage — whatever helps</span><input type="file" accept="image/*" multiple onChange={e=>setPhotos(Array.from(e.target.files||[]))}/></label>{photos.length>0&&<p className="photoCount">✓ {photos.length} photo{photos.length!==1?"s":""} selected on this page. Photos have not been uploaded.</p>}<button className="primaryBtn" onClick={()=>setStep("contact")}>{photos.length?"CONTINUE →":"SKIP PHOTOS →"}</button><button className="vehicleBack" onClick={()=>setStep("payoff")}>← Back</button></div>}
+{step === "contact" && <div className="questionState">
+  <p className="cardKicker">LAST STEP</p>
+  <h2>Where should we send your offer?</h2>
+  <p className="questionHelp">A local 228 buying specialist will review your vehicle details.</p>
+  <form onSubmit={submitContact} aria-busy={submitting}>
+    <label htmlFor="contact-name">Your name</label>
+    <input id="contact-name" autoComplete="name" required maxLength={150} disabled={submitting || submissionUnknown} value={name} onChange={e => setName(e.target.value)} placeholder="First & last name" />
+    <label htmlFor="contact-phone">Mobile phone</label>
+    <input id="contact-phone" type="tel" autoComplete="tel" required maxLength={30} disabled={submitting || submissionUnknown} value={phone} onChange={e => setPhone(e.target.value)} placeholder="(228) 555-1234" />
+    <label htmlFor="contact-email">Email <span className="optional">optional</span></label>
+    <input id="contact-email" type="email" autoComplete="email" maxLength={254} disabled={submitting || submissionUnknown} value={email} onChange={e => setEmail(e.target.value)} placeholder="you@email.com" />
+    {error && <p className="formError" role="alert">{error}</p>}
+    <button className="primaryBtn" disabled={submitting || submissionUnknown}>{submitting ? "SUBMITTING YOUR VEHICLE..." : submissionUnknown ? "PLEASE CONTACT THE 228 TEAM" : "SUBMIT MY VEHICLE →"}</button>
+  </form>
+  <p className="consent">By submitting, you agree that 228 Sell Us Your Car may contact you about your appraisal by phone, text, or email.</p>
+  <button className="vehicleBack" disabled={submitting || submissionUnknown} onClick={() => { setError(""); setStep("photos"); }}>← Back</button>
+</div>}
+{step==="done"&&vehicle&&leadId&&<div className="vehicleState"><div className="checkCircle">✓</div><p className="cardKicker">VEHICLE SUBMITTED</p><h2>You're all set, {name.trim().split(/\s+/)[0]}.</h2><p className="questionHelp">We have your {vehicle.year} {vehicle.make} {vehicle.model} with {mileage} miles. Our buying team can now review the details and follow up with you.</p><div className="summaryBox"><span><b>Condition</b>{condition}</span><span><b>Payoff</b>{payoff}</span><span><b>Photos</b>{photos.length?`${photos.length} selected, not uploaded`:"Not provided"}</span></div><p className="importantNote" role="status">VinCue lead ID: <strong>{leadId}</strong></p></div>}</div></div></section>
 <section className="statsBand"><div className="shell statsGrid"><div><strong>2 MIN</strong><span>to start your appraisal</span></div><div><strong>$0</strong><span>cost to get an offer</span></div><div><strong>0</strong><span>purchase required</span></div></div></section><section className="section shell" id="how"><div className="sectionHeading"><p className="eyebrow dark">HOW IT WORKS</p><h2>Three steps. That’s it.</h2><p>Fast enough to do from your phone and simple enough to know exactly what happens next.</p></div><div className="stepsGrid"><article><span className="stepNum">01</span><h3>Tell us about your car</h3><p>VIN, mileage, condition, and a few quick details.</p></article><article><span className="stepNum">02</span><h3>Get your offer</h3><p>Our local buying team reviews your vehicle and gives you a straightforward offer.</p></article><article><span className="stepNum">03</span><h3>Get paid</h3><p>We verify the details, handle the paperwork, and complete the purchase.</p></article></div></section><section className="whySection" id="why"><div className="shell whyGrid"><div><p className="eyebrow">WHY SELL TO 228?</p><h2>We buy cars.<br/>Not just trades.</h2><p className="whyLead">You do not have to buy another vehicle from us. If you just want to sell your car and walk away, that is completely fine.</p></div><div className="benefits"><div><span>01</span><h3>Financed? No problem.</h3><p>We can work with your lender and handle the payoff process.</p></div><div><span>02</span><h3>Local people, real answers.</h3><p>Your appraisal is handled by a local buying team.</p></div><div><span>03</span><h3>No pressure to trade.</h3><p>Sell your vehicle whether you're replacing it today, later, or not at all.</p></div></div></div></section><footer><div className="shell footerGrid"><Brand footer/><p>Serving Gulfport, Biloxi, D'Iberville, Ocean Springs, Long Beach and the Mississippi Gulf Coast.</p><p className="copyright">© 2026 228 Sell Us Your Car.</p></div></footer></main>}
