@@ -5,6 +5,8 @@ import { parseAppraisal, isVinCueLeadId } from "../lib/appraisal";
 import { createLeadSubmissionHandler } from "../lib/lead-submission";
 import { VinCueSubmissionError } from "../lib/vincue";
 
+const offerUrl = "https://pro.vincue.com/buyingcenter/marketreport.aspx?did=24831&leadid=123456&year=2003&mmid=1&trimid=2";
+
 // Synthetic examples only. Never use browser captures as fixtures.
 const example = () => ({
   vehicle: {
@@ -69,7 +71,7 @@ test("malformed or incomplete inputs never reach the adapter", async () => {
     ...[-1, 1.5, 101].map(selectedCount => ({ ...example(), photos: { selectedCount } })),
   ];
   let submissions = 0;
-  const handler = createLeadSubmissionHandler(async () => { submissions++; return { leadId: "123456" }; });
+  const handler = createLeadSubmissionHandler(async () => { submissions++; return { leadId: "123456", offerUrl }; });
   for (const body of invalid) {
     const response = await handler(request(body));
     assert.equal(response.status, 400);
@@ -80,7 +82,7 @@ test("malformed or incomplete inputs never reach the adapter", async () => {
 
 test("enforces origin and JSON content type", async () => {
   let submissions = 0;
-  const handler = createLeadSubmissionHandler(async () => { submissions++; return { leadId: "123456" }; });
+  const handler = createLeadSubmissionHandler(async () => { submissions++; return { leadId: "123456", offerUrl }; });
   for (const origin of ["https://other.example", "null", ""]) {
     assert.equal((await handler(request(example(), { origin }))).status, 403);
   }
@@ -117,20 +119,20 @@ test("accepts the public Host when Next.js rewrites the internal URL", async () 
   assert.equal(rejected.status, 403);
 });
 
-test("verified receipt returns only the lead ID", async () => {
+test("verified receipt returns only the lead ID and validated continuation", async () => {
   const handler = createLeadSubmissionHandler(async lead => {
     assert.deepEqual(lead, parseAppraisal(example()));
-    return { leadId: "123456", cookie: "fake-secret", raw: "private-provider-data" };
+    return { leadId: "123456", offerUrl, cookie: "fake-secret", raw: "private-provider-data" };
   });
   const response = await handler(request());
   assert.equal(response.status, 201);
-  assert.deepEqual(await response.json(), { ok: true, leadId: "123456" });
+  assert.deepEqual(await response.json(), { ok: true, leadId: "123456", offerUrl });
 });
 
 test("invalid receipts never count as successful submissions", async () => {
   for (const id of ["", "0", "-1", "1.5", "abc", "https://other.example/?leadid=123", "1".repeat(21)]) {
     assert.equal(isVinCueLeadId(id), false);
-    const handler = createLeadSubmissionHandler(async () => ({ leadId: id }));
+    const handler = createLeadSubmissionHandler(async () => ({ leadId: id, offerUrl }));
     const response = await handler(request());
     assert.equal(response.status, 502);
     const result = await response.json();

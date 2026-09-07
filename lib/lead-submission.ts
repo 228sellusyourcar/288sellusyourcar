@@ -2,6 +2,8 @@ import "server-only";
 import { InvalidAppraisal, isVinCueLeadId, parseAppraisal, type AppraisalLead } from "./appraisal";
 import { submitVinCueLead, VinCueSubmissionError, type VinCueReceipt } from "./vincue";
 
+import { isVinCueOfferUrl } from "./vincue-offer";
+
 const MAX_BODY_BYTES = 16 * 1024;
 class BodyTooLarge extends Error {}
 
@@ -67,8 +69,8 @@ export function createLeadSubmissionHandler(
 
     try {
       const receipt = await submit(lead);
-      if (!isVinCueLeadId(receipt?.leadId)) throw new VinCueSubmissionError("submission_unknown");
-      return json({ ok: true, leadId: receipt.leadId }, 201);
+      if (!isVinCueLeadId(receipt?.leadId) || !isVinCueOfferUrl(receipt?.offerUrl, receipt.leadId)) throw new VinCueSubmissionError("submission_unknown");
+      return json({ ok: true, leadId: receipt.leadId, offerUrl: receipt.offerUrl }, 201);
     } catch (error) {
       // Only validated vehicle labels/IDs may be returned for disambiguation.
       if (error instanceof VinCueSubmissionError && error.code === "vehicle_selection_required" && error.choices) {

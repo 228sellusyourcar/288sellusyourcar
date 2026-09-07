@@ -1,11 +1,13 @@
 "use client";
 import {FormEvent,useEffect,useRef,useState} from "react";
 import { isVinCueLeadId, parseAppraisal } from "../lib/appraisal";
+import { isVinCueOfferUrl } from "../lib/vincue-offer";
 type Vehicle={vin:string;year:string;make:string;model:string;trim:string;bodyStyle:string;drivetrain:string;engine:string};type Step="lookup"|"vehicle"|"mileage"|"contact"|"done";
 const Brand=({footer=false}:{footer?:boolean})=><a className={`brand ${footer?"footerBrand":""}`} href="#top"><img className="brandLogo" src="/228-logo.jpg" alt="228 Sell Us Your Car"/></a>;
 export default function Home(){const[lookupType,setLookupType]=useState<"vin"|"plate">("vin"),[value,setValue]=useState(""),[vehicle,setVehicle]=useState<Vehicle|null>(null),[loading,setLoading]=useState(false),[error,setError]=useState(""),[step,setStep]=useState<Step>("lookup"),[mileage,setMileage]=useState(""),[name,setName]=useState(""),[phone,setPhone]=useState(""),[email,setEmail]=useState("");
 const [submitting, setSubmitting] = useState(false);
 const [leadId, setLeadId] = useState("");
+const [offerUrl, setOfferUrl] = useState("");
 const [trimChoices, setTrimChoices] = useState<{ id: number; name: string }[]>([]);
 const [vinCueTrimId, setVinCueTrimId] = useState<number | undefined>();
 const [submissionUnknown, setSubmissionUnknown] = useState(false);
@@ -13,7 +15,14 @@ const submissionLock = useRef(false);
 const attemptKey = "228-vincue-attempt-v1";
 useEffect(() => {
   try {
-    if (sessionStorage.getItem(attemptKey)) {
+    const saved = sessionStorage.getItem(attemptKey);
+    if (saved?.startsWith("{")) {
+      const receipt = JSON.parse(saved);
+      if (isVinCueLeadId(receipt.leadId) && isVinCueOfferUrl(receipt.offerUrl, receipt.leadId)) {
+        setLeadId(receipt.leadId); setOfferUrl(receipt.offerUrl); setStep("done"); return;
+      }
+    }
+    if (saved) {
       setSubmissionUnknown(true);
       setError("You already started a submission in this tab. Please contact the 228 team before submitting again.");
     }
@@ -62,10 +71,12 @@ async function submitContact(e: FormEvent) {
       redirect: "error",
     });
     const result = await response.json();
-    if (response.status === 201 && result?.ok === true && isVinCueLeadId(result.leadId)) {
-      sessionStorage.setItem(attemptKey, `confirmed:${result.leadId}`);
+    if (response.status === 201 && result?.ok === true && isVinCueLeadId(result.leadId) && isVinCueOfferUrl(result.offerUrl, result.leadId)) {
+      try { sessionStorage.setItem(attemptKey, JSON.stringify({ leadId: result.leadId, offerUrl: result.offerUrl })); } catch { /* Keep the existing pending lock; the link still renders. */ }
+      setOfferUrl(result.offerUrl);
       setLeadId(result.leadId);
       setStep("done");
+      try { window.location.assign(result.offerUrl); } catch { /* The visible link allows manual continuation. */ }
       return;
     }
     if (response.status === 409 && result?.code === "vehicle_selection_required" && result.ok === false && result.retryable === true && Array.isArray(result.choices) && result.choices.length > 0 && result.choices.length <= 30 && result.choices.every((choice: {id?: unknown; name?: unknown}) => typeof choice.id === "number" && Number.isSafeInteger(choice.id) && choice.id > 0 && typeof choice.name === "string" && choice.name.length < 300)) {
@@ -126,5 +137,5 @@ return <main><header className="nav shell"><Brand/><nav><a href="#how">How It Wo
   <p className="consent">By submitting, you agree that 228 Sell Us Your Car may contact you about your appraisal by phone, text, or email.</p>
   <button className="vehicleBack" disabled={submitting || submissionUnknown} onClick={() => { setError(""); setStep("mileage"); }}>← Back</button>
 </div>}
-{step==="done"&&vehicle&&leadId&&<div className="vehicleState"><div className="checkCircle">✓</div><p className="cardKicker">VEHICLE SUBMITTED</p><h2>You're all set, {name.trim().split(/\s+/)[0]}.</h2><p className="questionHelp">We have your {vehicle.year} {vehicle.make} {vehicle.model} with {mileage} miles. Our buying team can now review the details and follow up with you.</p><p className="questionHelp">We’ll discuss condition, payoff, and any photos during follow-up.</p><p className="importantNote" role="status">VinCue lead ID: <strong>{leadId}</strong></p></div>}</div></div></section>
+{step==="done"&&leadId&&offerUrl&&<div className="vehicleState"><div className="checkCircle">✓</div><p className="cardKicker">CONTINUE TO YOUR RESULTS</p><h2>Your vehicle details are ready.</h2><p className="questionHelp">Opening your secure VinCue results page to complete your request and show your offer. Some vehicles require an in-person inspection before an offer is available.</p><a className="primaryBtn" href={offerUrl} referrerPolicy="no-referrer">VIEW MY RESULTS →</a><p className="importantNote" role="status">VinCue reference: <strong>{leadId}</strong></p><p className="finePrint">If the results page did not open, use the button above. You do not need to submit your details again.</p></div>}</div></div></section>
 <section className="statsBand"><div className="shell statsGrid"><div><strong>2 MIN</strong><span>to start your appraisal</span></div><div><strong>$0</strong><span>cost to get an offer</span></div><div><strong>0</strong><span>purchase required</span></div></div></section><section className="section shell" id="how"><div className="sectionHeading"><p className="eyebrow dark">HOW IT WORKS</p><h2>Three steps. That’s it.</h2><p>Fast enough to do from your phone and simple enough to know exactly what happens next.</p></div><div className="stepsGrid"><article><span className="stepNum">01</span><h3>Tell us about your car</h3><p>Start with your VIN, mileage, and contact details.</p></article><article><span className="stepNum">02</span><h3>Get your offer</h3><p>Our local buying team reviews your vehicle and gives you a straightforward offer.</p></article><article><span className="stepNum">03</span><h3>Get paid</h3><p>We verify the details, handle the paperwork, and complete the purchase.</p></article></div></section><section className="whySection" id="why"><div className="shell whyGrid"><div><p className="eyebrow">WHY SELL TO 228?</p><h2>We buy cars.<br/>Not just trades.</h2><p className="whyLead">You do not have to buy another vehicle from us. If you just want to sell your car and walk away, that is completely fine.</p></div><div className="benefits"><div><span>01</span><h3>Financed? No problem.</h3><p>We can work with your lender and handle the payoff process.</p></div><div><span>02</span><h3>Local people, real answers.</h3><p>Your appraisal is handled by a local buying team.</p></div><div><span>03</span><h3>No pressure to trade.</h3><p>Sell your vehicle whether you're replacing it today, later, or not at all.</p></div></div></div></section><footer><div className="shell footerGrid"><Brand footer/><p>Serving Gulfport, Biloxi, D'Iberville, Ocean Springs, Long Beach and the Mississippi Gulf Coast.</p><p className="copyright">© 2026 228 Sell Us Your Car.</p></div></footer></main>}

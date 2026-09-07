@@ -54,7 +54,8 @@ bypass or browser fingerprint spoofing was used.
    41 fields. Individual cookie/header necessity was not independently tested.
 5. With redirects disabled, require HTTP 302/303, HTTPS `pro.vincue.com`, exact
    `/buyingcenter/marketreport.aspx`, exactly one matching dealer and one positive
-   numeric lead ID. Do not follow the report redirect or expose its URL.
+   numeric lead ID. Validate the continuation URL against the submitted year/model/trim and lead.
+   Return it to this customer and navigate there to finish the vendor flow.
 
 No widget rendering, analytics requests, old cookies, hard-coded VIEWSTATE, or
 additional infrastructure is needed. The form is an observed Web Forms contract,
@@ -68,8 +69,8 @@ not a vendor-guaranteed public API. Form drift fails closed.
   exception or unverified response after starting POST is unknown, even HTTP
   200/4xx. No automatic retry follows it. No upstream bodies, state, PII, URLs,
   or exceptions are logged or returned.
-- HTTP 201 plus a validated lead ID is required for client success. The browser
-  prevents concurrent clicks and records pending/confirmed status only in
+- HTTP 201 plus a validated lead ID and matching results URL is required for continuation. The browser
+  prevents concurrent clicks and records pending status or the confirmed reference/results URL in
   sessionStorage before sending. A refresh in that tab does not unlock retries.
   A definitive pre-submit failure clears that marker; an uncertain result does
   not. Contact details remain only in page memory and are lost on refresh.
@@ -127,3 +128,30 @@ choices appear on vehicle confirmation, before mileage or contact information.
 Continue is disabled until a trim is selected; a single match is selected
 automatically. The final submission still revalidates against a fresh lookup,
 and the 409 selector remains a fallback for changed vendor results.
+
+## Results-page handoff correction — 2026-09-07
+
+Dealer-side inspection confirmed that the earlier approved test record existed
+but initially had no vehicle title or offer. Loading its observed market-report
+URL populated the vehicle title and added the seller-waiting-on-offer activity.
+The page returned the inspection-required result for that vehicle. This proves
+that contact acceptance alone was an incomplete workflow, not successful offer
+completion. The separately reported website lead has not yet been reconciled.
+
+The adapter now preserves the vendor Location only after validating HTTPS host,
+path, unique allowlisted query fields, dealer, lead ID, and submitted vehicle
+identifiers. The route returns `offerUrl` with the receipt. The browser navigates
+to it, allowing VinCue’s own page and scripts to complete processing and display
+its offer or inspection-required result. No widget is inserted into our funnel.
+No arbitrary upstream URL, cookie, or hidden state is exposed. The link contains
+the customer's lead reference and must not be logged or published as a fixture.
+
+The continuation screen avoids claiming the dealer has received a completed
+appraisal. It includes a manual link if navigation is blocked. Same-tab refresh
+restores that link from sessionStorage without repeating the contact POST.
+This is navigation recovery, not shared server-side idempotency. An old receipt
+that contains only a lead ID cannot be reconstructed automatically.
+
+Tests cover missing/unsafe/mismatched continuation URLs and no POST retries.
+A new hosted end-to-end submission and dealer verification remain to confirm
+this deployed handoff; no additional lead was fabricated during implementation.

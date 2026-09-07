@@ -23,13 +23,13 @@ function mock(options: { html?: string; location?: string; status?: number; lost
     if (url.pathname.endsWith("vehicleAutoComplete.aspx")) return Response.json(options.matches ?? [{ year: 2003, mmid: 1, trimid: 2, vehicleName: "2003 Honda Accord EX" }]);
     if (init.method !== "POST") return new Response(options.html ?? form("synthetic-fresh"), { headers: { "set-cookie": "test-affinity=fresh; Path=/buyingcenter; Secure; HttpOnly" } });
     if (options.lost) throw new Error("Private upstream details");
-    return new Response(null, { status: options.status ?? 302, headers: { location: options.location ?? "/buyingcenter/marketreport.aspx?did=24831&leadid=12345" } });
+    return new Response(null, { status: options.status ?? 302, headers: { location: options.location ?? `/buyingcenter/marketreport.aspx?did=24831&leadid=12345&year=2003&mmid=1&trimid=${calls[1].url.searchParams.get("trimid")}` } });
   }) as typeof fetch;
   return { calls, submit: createVinCueSubmit(fetcher) };
 }
 test("minimal sequence uses fresh state, correct encoding, fresh cookies and verified receipt", async () => {
   const { calls, submit } = mock();
-  assert.deepEqual(await submit(lead), { leadId: "12345" });
+  assert.equal((await submit(lead)).leadId, "12345");
   assert.equal(calls.length, 3);
   assert.equal(calls[0].url.searchParams.get("q"), lead.vehicle.vin);
   assert.equal(calls[1].url.searchParams.get("mmid"), "1");
@@ -89,7 +89,9 @@ test("ambiguous VIN requests a trim choice, then validates it against a fresh lo
     assert.equal(calls.length, 1);
   }
   const { submit, calls } = mock({ matches });
-  assert.deepEqual(await submit({ ...lead, vinCueTrimId: 3 }), { leadId: "12345" });
+  const receipt = await submit({ ...lead, vinCueTrimId: 3 });
+  assert.equal(receipt.leadId, "12345");
+  assert.equal(new URL(receipt.offerUrl).searchParams.get("trimid"), "3");
   assert.equal(calls[1].url.searchParams.get("trimid"), "3");
 });
 
@@ -105,4 +107,16 @@ test("vehicle confirmation lookup returns trim choices using GET only", async ()
   }) as typeof fetch);
   assert.equal(calls, 1);
   assert.deepEqual(choices, [{ id: 2, name: "2003 Honda Accord EX" }]);
+});
+
+test("offer continuation rejects missing, mismatched or unsafe redirect details", async () => {
+  const { isVinCueOfferUrl } = await import("../lib/vincue-offer");
+  const base = "https://pro.vincue.com/buyingcenter/marketreport.aspx?did=24831&leadid=12345&year=2003&mmid=1&trimid=2";
+  assert.equal(isVinCueOfferUrl(base, "12345"), true);
+  for (const url of [undefined, base.replace("https:", "http:"), base.replace("pro.vincue.com", "evil.example"), base+"&did=24831", base+"&next=https://evil.example", base+"#fragment", base.replace("leadid=12345", "leadid=99")]) assert.equal(isVinCueOfferUrl(url, "12345"), false);
+  for (const location of ["/buyingcenter/marketreport.aspx?did=24831&leadid=12345", base.replace("trimid=2", "trimid=99"), base.replace("year=2003", "year=2020")]) {
+    const { submit, calls } = mock({ location });
+    await assert.rejects(submit(lead), { code: "submission_unknown" });
+    assert.equal(calls.filter(c=>c.init.method === "POST").length, 1);
+  }
 });

@@ -1,9 +1,10 @@
 import "server-only";
 import { load } from "cheerio";
+import { isVinCueOfferUrl } from "./vincue-offer";
 import { CookieJar } from "tough-cookie";
 import { isVinCueLeadId, type AppraisalLead } from "./appraisal";
 
-export type VinCueReceipt = { leadId: string };
+export type VinCueReceipt = { leadId: string; offerUrl: string };
 export type VinCueTrimChoice = { id: number; name: string };
 export type VinCueFailure = "vehicle_selection_required" | "integration_unavailable" | "submission_rejected" | "submission_unknown";
 export class VinCueSubmissionError extends Error {
@@ -151,7 +152,15 @@ export function createVinCueSubmit(fetcher: typeof fetch = (...args) => fetch(..
       // Never follow redirects or parse an arbitrary error page as success.
       await response.body?.cancel();
       if (!confirmed) throw new VinCueSubmissionError("submission_unknown");
-      return { leadId: ids[0] };
+      // Preserve the vendor continuation URL. Loading this page completes
+      // vehicle/offer processing; the contact receipt alone is incomplete.
+      if (!redirect || !isVinCueOfferUrl(redirect.href, ids[0]) ||
+        redirect.searchParams.get("year") !== lead.vehicle.year ||
+        redirect.searchParams.get("mmid") !== String(match.mmid) ||
+        redirect.searchParams.get("trimid") !== String(match.trimid)) {
+        throw new VinCueSubmissionError("submission_unknown");
+      }
+      return { leadId: ids[0], offerUrl: redirect.href };
     } catch (error) {
       if (!postStarted && error instanceof VinCueSubmissionError && error.code === "vehicle_selection_required") throw error;
       // Even a POST returning 200/4xx is unconfirmed, not safe to retry.
