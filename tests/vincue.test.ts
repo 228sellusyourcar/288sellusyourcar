@@ -10,6 +10,9 @@ function form(state: string) {
   <input type="hidden" name="__VIEWSTATEGENERATOR" value="synthetic-generator">
   <input type="hidden" name="test$__VS" value="synthetic&amp;state">
   <input type="hidden" name="test$tehDealerid$_inputhidden" value="24831">
+  <input type="hidden" name="test$threfer$_inputhidden" value="https://288sellusyourcar1.vercel.app/">
+  <input type="hidden" name="test$TableEditHidden1$_inputhidden" value="0">
+  <input type="hidden" name="test$theforceleadtype$_inputhidden" value="-1">
   <input type="hidden" name="test$thvin$_inputhidden" value="1HGCM82633A004352">
   ${["first-name", "last-name", "phone", "email", "odometer"].map(x => `<input required class="lead-${x}" name="test$${x}">`).join("")}
   <select class="yearselector" name="test$year"><option value="2003">2003</option></select>
@@ -33,6 +36,9 @@ test("minimal sequence uses fresh state, correct encoding, fresh cookies and ver
   assert.equal(calls.length, 3);
   assert.equal(calls[0].url.searchParams.get("q"), lead.vehicle.vin);
   assert.equal(calls[1].url.searchParams.get("mmid"), "1");
+  assert.equal(calls[1].url.searchParams.get("r"), "https://288sellusyourcar1.vercel.app/");
+  assert.equal(calls[1].url.searchParams.get("followdealer"), "0");
+  assert.equal(calls[1].url.searchParams.get("forceLeadType"), "-1");
   const post = calls[2];
   assert.equal(post.init.method, "POST"); assert.equal(post.init.redirect, "manual");
   assert.equal((post.init.headers as Record<string, string>).Cookie, "test-affinity=fresh");
@@ -44,11 +50,16 @@ test("minimal sequence uses fresh state, correct encoding, fresh cookies and ver
   assert.equal(body.get("test$year"), "2003");
   assert.equal(body.get("__EVENTARGUMENT"), "save:");
   assert.equal(body.has("marketing"), false);
+  assert.equal(body.get("test$threfer$_inputhidden"), "https://288sellusyourcar1.vercel.app/");
+  assert.equal(body.get("test$TableEditHidden1$_inputhidden"), "0");
+  assert.equal(body.get("test$theforceleadtype$_inputhidden"), "-1");
 });
 test("form drift and ambiguous vehicle matches stop before POST", async () => {
   for (const options of [
     { matches: [] }, { matches: [{}, {}] }, { matches: [{ year: 2020, mmid: 1, trimid: 2, vehicleName: "Wrong" }] },
     { html: form("fresh").replace('value="24831"', 'value="999"') },
+    { html: form("fresh").replace('value="https://288sellusyourcar1.vercel.app/"', 'value=""') },
+    { html: form("fresh").replace('value="-1"', 'value=""') },
     { html: form("") }, { html: form("fresh").replace('./contact.aspx?did=24831', 'https://other.example/') },
     { html: form("fresh").replace('</form>', '<input required name="new-field"></form>') },
     { html: form("fresh").replace('value="2003"', 'value="2004"') },

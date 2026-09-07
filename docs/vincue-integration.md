@@ -155,3 +155,21 @@ that contains only a lead ID cannot be reconstructed automatically.
 Tests cover missing/unsafe/mismatched continuation URLs and no POST retries.
 A new hosted end-to-end submission and dealer verification remain to confirm
 this deployed handoff; no additional lead was fabricated during implementation.
+
+## Restore widget workflow context
+
+A hosted test reached the customer results page but failed in VinCue's
+`QryBuyingCenterInfographicDisplay` procedure while inserting a NULL
+`DestinationUrl` into `Admin.dbo.ShortUrl`. Its lead was visible in the dealer
+inbox, but the vehicle title and offer were incomplete.
+
+Read-only bootstrap comparisons established that `r` populates the protected
+`threfer` value; `followdealer=0` populates `TableEditHidden1`; and the original
+widget's default `forceLeadType=-1` populates `theforceleadtype`. The adapter now
+supplies all three before loading the form, using this website's canonical URL.
+It requires the returned hidden values to match and preserves VinCue-generated
+state. It does not patch protected values or reuse visitor/session tokens.
+
+Update SOURCE_PAGE in the adapter when moving to the final public domain.
+The effect on completed offer generation must be verified with a controlled
+hosted test; the NULL error alone does not identify its root cause.

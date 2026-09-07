@@ -12,6 +12,7 @@ export class VinCueSubmissionError extends Error {
 }
 const ORIGIN = "https://pro.vincue.com";
 const DEALER = "24831";
+const SOURCE_PAGE = "https://288sellusyourcar1.vercel.app/";
 const CONTACT = "/buyingcenter/contact.aspx";
 function requireState(ok: unknown): asserts ok {
   if (!ok) throw new VinCueSubmissionError("integration_unavailable");
@@ -89,7 +90,10 @@ export function createVinCueSubmit(fetcher: typeof fetch = (...args) => fetch(..
       }
       const url = new URL(CONTACT, ORIGIN);
       url.search = new URLSearchParams({ did: DEALER, vin: lead.vehicle.vin,
-        year: lead.vehicle.year, vn: match.vehicleName, mmid: String(match.mmid), trimid: String(match.trimid) }).toString();
+        year: lead.vehicle.year, vn: match.vehicleName, mmid: String(match.mmid), trimid: String(match.trimid),
+        // These are widget workflow inputs, not transient tracking tokens.
+        // Let VinCue generate the matching protected hidden state itself.
+        r: SOURCE_PAGE, followdealer: "0", forceLeadType: "-1" }).toString();
       const $ = load(await get(url));
       const form = $("form#theform");
       requireState(form.length === 1 && form.attr("method")?.toLowerCase() === "post" && form.attr("action"));
@@ -103,7 +107,7 @@ export function createVinCueSubmit(fetcher: typeof fetch = (...args) => fetch(..
         body.set(name, $(el).attr("value") || "");
       });
       requireState(body.get("__VIEWSTATE") && body.get("__VIEWSTATEGENERATOR"));
-      for (const [suffix, expected] of [["$tehDealerid$_inputhidden", DEALER], ["$thvin$_inputhidden", lead.vehicle.vin]]) {
+      for (const [suffix, expected] of [["$tehDealerid$_inputhidden", DEALER], ["$thvin$_inputhidden", lead.vehicle.vin], ["$threfer$_inputhidden", SOURCE_PAGE], ["$TableEditHidden1$_inputhidden", "0"], ["$theforceleadtype$_inputhidden", "-1"]]) {
         const values = Array.from(body.entries()).filter(([name]) => name.endsWith(suffix)).map(([, value]) => value);
         requireState(values.length === 1 && values[0] === expected);
       }
