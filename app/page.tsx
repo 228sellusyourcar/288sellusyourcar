@@ -6,6 +6,8 @@ const Brand=({footer=false}:{footer?:boolean})=><a className={`brand ${footer?"f
 export default function Home(){const[lookupType,setLookupType]=useState<"vin"|"plate">("vin"),[value,setValue]=useState(""),[vehicle,setVehicle]=useState<Vehicle|null>(null),[loading,setLoading]=useState(false),[error,setError]=useState(""),[step,setStep]=useState<Step>("lookup"),[mileage,setMileage]=useState(""),[name,setName]=useState(""),[phone,setPhone]=useState(""),[email,setEmail]=useState("");
 const [submitting, setSubmitting] = useState(false);
 const [leadId, setLeadId] = useState("");
+const [trimChoices, setTrimChoices] = useState<{ id: number; name: string }[]>([]);
+const [vinCueTrimId, setVinCueTrimId] = useState<number | undefined>();
 const [submissionUnknown, setSubmissionUnknown] = useState(false);
 const submissionLock = useRef(false);
 const attemptKey = "228-vincue-attempt-v1";
@@ -17,7 +19,7 @@ useEffect(() => {
     }
   } catch { /* Submission checks storage again before sending. */ }
 }, []);
-async function startOffer(e:FormEvent){e.preventDefault();setError("");if(lookupType==="plate"){setError("License plate lookup is coming next. For now, enter the 17-character VIN.");return}const vin=value.trim().toUpperCase();if(vin.length!==17){setError("Please enter the full 17-character VIN.");return}setLoading(true);try{const r=await fetch("/api/decode-vin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({vin})}),d=await r.json();if(!r.ok)throw new Error(d.error||"We couldn't decode that VIN.");setVehicle(d);setStep("vehicle")}catch(err){setError(err instanceof Error?err.message:"We couldn't decode that VIN.")}finally{setLoading(false)}}
+async function startOffer(e:FormEvent){e.preventDefault();setError("");if(lookupType==="plate"){setError("License plate lookup is coming next. For now, enter the 17-character VIN.");return}const vin=value.trim().toUpperCase();if(vin.length!==17){setError("Please enter the full 17-character VIN.");return}setLoading(true);try{const r=await fetch("/api/decode-vin",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({vin})}),d=await r.json();if(!r.ok)throw new Error(d.error||"We couldn't decode that VIN.");setVehicle(d);setTrimChoices([]);setVinCueTrimId(undefined);setStep("vehicle")}catch(err){setError(err instanceof Error?err.message:"We couldn't decode that VIN.")}finally{setLoading(false)}}
 function submitMileage(e:FormEvent){e.preventDefault();const n=Number(mileage.replace(/,/g,""));if(!n||n<1){setError("Enter the vehicle's current mileage.");return}setMileage(n.toLocaleString());setError("");setStep("contact")}
 async function submitContact(e: FormEvent) {
   e.preventDefault();
@@ -29,6 +31,7 @@ async function submitContact(e: FormEvent) {
       vehicle,
       mileage: Number(mileage.replace(/,/g, "")),
       contact: { fullName: name, phone, email },
+      ...(vinCueTrimId === undefined ? {} : { vinCueTrimId }),
       appraisalContactConsent: true,
     });
   } catch (err) {
@@ -65,6 +68,13 @@ async function submitContact(e: FormEvent) {
       setStep("done");
       return;
     }
+    if (response.status === 409 && result?.code === "vehicle_selection_required" && result.ok === false && result.retryable === true && Array.isArray(result.choices) && result.choices.length > 0 && result.choices.length <= 30 && result.choices.every((choice: {id?: unknown; name?: unknown}) => typeof choice.id === "number" && Number.isSafeInteger(choice.id) && choice.id > 0 && typeof choice.name === "string" && choice.name.length < 300)) {
+      sessionStorage.removeItem(attemptKey);
+      setTrimChoices(result.choices);
+      setVinCueTrimId(undefined);
+      setError("VinCue found several possible trims. Choose yours below, then submit again. Nothing has been sent yet.");
+      return;
+    }
     // Only a recognized negative acknowledgement permits another attempt.
     // Unknown/network outcomes can follow acceptance by the provider.
     const retryableStatus: Record<string, number> = {
@@ -97,6 +107,13 @@ return <main><header className="nav shell"><Brand/><nav><a href="#how">How It Wo
   <h2>Where should we send your offer?</h2>
   <p className="questionHelp">A local 228 buying specialist will review your vehicle and follow up about condition, payoff, and photos.</p>
   <form onSubmit={submitContact} aria-busy={submitting}>
+    {trimChoices.length > 0 && <fieldset disabled={submitting || submissionUnknown}>
+      <legend>Which trim is your vehicle?</legend>
+      {trimChoices.map(choice => <label key={choice.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <input type="radio" name="vincue-trim" required checked={vinCueTrimId === choice.id} onChange={() => setVinCueTrimId(choice.id)} style={{ width: "auto", margin: 0 }} />
+        {choice.name}
+      </label>)}
+    </fieldset>}
     <label htmlFor="contact-name">Your name</label>
     <input id="contact-name" autoComplete="name" required maxLength={150} disabled={submitting || submissionUnknown} value={name} onChange={e => setName(e.target.value)} placeholder="First & last name" />
     <label htmlFor="contact-phone">Mobile phone</label>

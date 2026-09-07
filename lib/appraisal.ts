@@ -11,6 +11,7 @@ export type AppraisalLead = {
     engine: string;
   };
   mileage: number;
+  vinCueTrimId?: number;
   contact: { fullName: string; phone: string; email: string };
   appraisalContactConsent: true;
 };
@@ -51,6 +52,9 @@ export function parseAppraisal(value: unknown): AppraisalLead {
   if (body.condition !== undefined || body.payoff !== undefined || body.photos !== undefined) {
     throw new InvalidAppraisal("Please refresh this page to use the current submission form. Condition, payoff, and photos are collected during follow-up.");
   }
+  if (body.vinCueTrimId !== undefined && (typeof body.vinCueTrimId !== "number" || !Number.isSafeInteger(body.vinCueTrimId) || body.vinCueTrimId <= 0)) {
+    throw new InvalidAppraisal("Please choose a valid vehicle trim.");
+  }
   const fullName = text(contact.fullName, "your name", 150);
   if (fullName.split(/\s+/).length < 2) throw new InvalidAppraisal("Please enter your first and last name.");
   const phone = text(contact.phone, "your phone number", 30);
@@ -79,6 +83,7 @@ export function parseAppraisal(value: unknown): AppraisalLead {
       engine: text(vehicle.engine, "the engine", 100, false),
     },
     mileage: body.mileage,
+    ...(body.vinCueTrimId === undefined ? {} : { vinCueTrimId: body.vinCueTrimId as number }),
     contact: { fullName, phone: `+${digits.length === 10 ? "1" : ""}${digits}`, email },
     appraisalContactConsent: true,
   };

@@ -170,3 +170,15 @@ test("selected photos never activate delivery or claim success", async () => {
   assert.equal(response.status, 400);
   assert.equal((await response.json()).ok, false);
 });
+
+test("trim selection response confirms no submission and returns only choices", async () => {
+  const choices = [{ id: 1, name: "Example vehicle trim" }];
+  const handler = createLeadSubmissionHandler(async () => { throw new VinCueSubmissionError("vehicle_selection_required", choices); });
+  const response = await handler(request());
+  assert.equal(response.status, 409);
+  const result = await response.json();
+  assert.equal(result.retryable, true);
+  assert.deepEqual(result.choices, choices);
+  assert.equal(parseAppraisal({ ...example(), vinCueTrimId: 1 }).vinCueTrimId, 1);
+  for (const vinCueTrimId of ["1", 0, -1, 1.5]) assert.throws(() => parseAppraisal({ ...example(), vinCueTrimId }));
+});

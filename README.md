@@ -10,7 +10,7 @@ Verification: `pnpm test`, `pnpm typecheck`, and `pnpm build`.
 ## VinCue submission
 
 The contact step calls `POST /api/leads`. The server resolves VinCue vehicle
-identifiers, obtains fresh Web Forms state and cookies, and posts once for dealer
+identifiers, asks the customer to select a trim when the VIN has multiple matches, obtains fresh Web Forms state and cookies, and posts once for dealer
 24831. Only a verified success redirect produces a success screen with a lead ID.
 No widget, saved cookies, captured tokens, or additional storage service is used.
 

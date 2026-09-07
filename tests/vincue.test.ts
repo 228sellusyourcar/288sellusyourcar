@@ -73,3 +73,22 @@ test("POST uncertainty never retries or follows redirects", async () => {
     assert.equal(calls.length, 3);
   }
 });
+
+test("ambiguous VIN requests a trim choice, then validates it against a fresh lookup", async () => {
+  const matches = [
+    { year: 2003, mmid: 1, trimid: 2, vehicleName: "2003 Honda Accord EX" },
+    { year: 2003, mmid: 1, trimid: 3, vehicleName: "2003 Honda Accord LX" },
+  ];
+  for (const vinCueTrimId of [undefined, 999]) {
+    const { submit, calls } = mock({ matches });
+    await assert.rejects(submit({ ...lead, vinCueTrimId }), (error: any) => {
+      assert.equal(error.code, "vehicle_selection_required");
+      assert.deepEqual(error.choices, [{ id: 2, name: matches[0].vehicleName }, { id: 3, name: matches[1].vehicleName }]);
+      return true;
+    });
+    assert.equal(calls.length, 1);
+  }
+  const { submit, calls } = mock({ matches });
+  assert.deepEqual(await submit({ ...lead, vinCueTrimId: 3 }), { leadId: "12345" });
+  assert.equal(calls[1].url.searchParams.get("trimid"), "3");
+});

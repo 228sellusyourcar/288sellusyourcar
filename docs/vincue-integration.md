@@ -33,9 +33,10 @@ load fresh state, despite earlier Python urllib HTTP 403 responses. No challenge
 bypass or browser fingerprint spoofing was used.
 
 1. GET `/buyingcenter/aj/vehicleAutoComplete.aspx?q=<VIN>`. The endpoint comes
-   from the uploaded widget JavaScript. Require exactly one match with valid
-   `mmid`, `trimid`, vehicle name, and the expected year. Ambiguous matches stop
-   before submission. This supplements the existing NHTSA decoder.
+   from the uploaded widget JavaScript. Validate each match’s `mmid`, `trimid`, vehicle name, and expected year.
+   Multiple matches return HTTP 409 with trim choices before any contact-form
+   POST. The customer chooses a trim; the next attempt rechecks that ID against
+   a fresh VIN lookup. Unknown IDs return choices again, never arbitrary routing. This supplements the existing NHTSA decoder.
 2. GET `/buyingcenter/contact.aspx` with `did=24831`, VIN, year, vehicle name,
    `mmid`, and `trimid`. Without the identifiers, the expected year option was
    absent in a read-only test. The six parameters sufficed in the accepted test;
@@ -110,3 +111,11 @@ protection across Vercel instances.
 
 Raw captures and transient live state remain outside this repository.
 `.gitignore` excludes HAR, the extracted payload filename, and environment files.
+
+## Multi-trim VIN fix
+
+A live F-150 lookup exposed five possible trims. The original single-match guard
+returned generic unavailability. The UI now displays those vendor choices and
+requires selection, retaining contact details. Tests cover no selection, forged
+IDs, fresh lookup validation, and successful selected-trim mapping. No extra
+live lead was created to verify this fix.

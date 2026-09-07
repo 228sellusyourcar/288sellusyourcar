@@ -70,6 +70,10 @@ export function createLeadSubmissionHandler(
       if (!isVinCueLeadId(receipt?.leadId)) throw new VinCueSubmissionError("submission_unknown");
       return json({ ok: true, leadId: receipt.leadId }, 201);
     } catch (error) {
+      // Only validated vehicle labels/IDs may be returned for disambiguation.
+      if (error instanceof VinCueSubmissionError && error.code === "vehicle_selection_required" && error.choices) {
+        return json({ ok: false, code: error.code, error: "Please choose your vehicle’s trim below, then submit again. Nothing has been sent yet.", retryable: true, choices: error.choices }, 409);
+      }
       // Never return or log upstream bodies, URLs, cookies, credentials, or PII.
       if (error instanceof VinCueSubmissionError && error.code === "integration_unavailable") {
         return failure("integration_unavailable", "Online submission is currently unavailable. Your appraisal has not been sent. Your details remain on this page; please keep it open and try again later.", 503);

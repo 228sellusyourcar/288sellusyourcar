@@ -4,9 +4,10 @@ import { CookieJar } from "tough-cookie";
 import { isVinCueLeadId, type AppraisalLead } from "./appraisal";
 
 export type VinCueReceipt = { leadId: string };
-export type VinCueFailure = "integration_unavailable" | "submission_rejected" | "submission_unknown";
+export type VinCueTrimChoice = { id: number; name: string };
+export type VinCueFailure = "vehicle_selection_required" | "integration_unavailable" | "submission_rejected" | "submission_unknown";
 export class VinCueSubmissionError extends Error {
-  constructor(public readonly code: VinCueFailure) { super(code); }
+  constructor(public readonly code: VinCueFailure, public readonly choices?: VinCueTrimChoice[]) { super(code); }
 }
 const ORIGIN = "https://pro.vincue.com";
 const DEALER = "24831";
@@ -53,14 +54,22 @@ export function createVinCueSubmit(fetcher: typeof fetch = (...args) => fetch(..
       const lookup = new URL("/buyingcenter/aj/vehicleAutoComplete.aspx", ORIGIN);
       lookup.searchParams.set("q", lead.vehicle.vin);
       const matches: unknown = JSON.parse(await get(lookup));
-      // Ambiguous/no matches need human review, never silently choose a trim.
-      requireState(Array.isArray(matches) && matches.length === 1);
-      const match = matches[0];
-      requireState(match && typeof match === "object");
-      requireState(Number.isSafeInteger(match.mmid) && match.mmid > 0);
-      requireState(Number.isSafeInteger(match.trimid) && match.trimid > 0);
-      requireState(String(match.year) === lead.vehicle.year);
-      requireState(typeof match.vehicleName === "string" && match.vehicleName.length > 0 && match.vehicleName.length < 300);
+      // Validate every option before asking the customer to resolve ambiguity.
+      requireState(Array.isArray(matches) && matches.length > 0 && matches.length <= 30);
+      for (const candidate of matches) {
+        requireState(candidate && typeof candidate === "object");
+        requireState(Number.isSafeInteger(candidate.mmid) && candidate.mmid > 0);
+        requireState(Number.isSafeInteger(candidate.trimid) && candidate.trimid > 0);
+        requireState(String(candidate.year) === lead.vehicle.year);
+        requireState(typeof candidate.vehicleName === "string" && candidate.vehicleName.length > 0 && candidate.vehicleName.length < 300);
+      }
+      requireState(new Set(matches.map(candidate => candidate.trimid)).size === matches.length);
+      const match = lead.vinCueTrimId === undefined
+        ? (matches.length === 1 ? matches[0] : undefined)
+        : matches.find(candidate => candidate.trimid === lead.vinCueTrimId);
+      if (!match) {
+        throw new VinCueSubmissionError("vehicle_selection_required", matches.map(candidate => ({ id: candidate.trimid, name: candidate.vehicleName })));
+      }
       const url = new URL(CONTACT, ORIGIN);
       url.search = new URLSearchParams({ did: DEALER, vin: lead.vehicle.vin,
         year: lead.vehicle.year, vn: match.vehicleName, mmid: String(match.mmid), trimid: String(match.trimid) }).toString();
@@ -127,7 +136,8 @@ export function createVinCueSubmit(fetcher: typeof fetch = (...args) => fetch(..
       await response.body?.cancel();
       if (!confirmed) throw new VinCueSubmissionError("submission_unknown");
       return { leadId: ids[0] };
-    } catch {
+    } catch (error) {
+      if (!postStarted && error instanceof VinCueSubmissionError && error.code === "vehicle_selection_required") throw error;
       // Even a POST returning 200/4xx is unconfirmed, not safe to retry.
       throw new VinCueSubmissionError(postStarted ? "submission_unknown" : "integration_unavailable");
     } finally { clearTimeout(timer); }
