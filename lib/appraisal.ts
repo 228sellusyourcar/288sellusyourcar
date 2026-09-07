@@ -11,11 +11,7 @@ export type AppraisalLead = {
     engine: string;
   };
   mileage: number;
-  condition: "Excellent" | "Good" | "Fair" | "Needs Work";
-  payoff: "Yes, I have a payoff" | "No, it's paid off";
   contact: { fullName: string; phone: string; email: string };
-  // Files remain in the browser. A count never means photos were uploaded.
-  photos: { selectedCount: number };
   appraisalContactConsent: true;
 };
 
@@ -41,7 +37,6 @@ export function parseAppraisal(value: unknown): AppraisalLead {
   const body = object(value);
   const vehicle = object(body.vehicle);
   const contact = object(body.contact);
-  const photos = object(body.photos);
   const vin = text(vehicle.vin, "the VIN", 17).toUpperCase();
   if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
     throw new InvalidAppraisal("Please enter a valid 17-character VIN.");
@@ -53,25 +48,19 @@ export function parseAppraisal(value: unknown): AppraisalLead {
   if (typeof body.mileage !== "number" || !Number.isSafeInteger(body.mileage) || body.mileage < 1 || body.mileage > 9999999) {
     throw new InvalidAppraisal("Please enter valid whole-number mileage.");
   }
-  if (!["Excellent", "Good", "Fair", "Needs Work"].includes(body.condition as string)) {
-    throw new InvalidAppraisal("Please choose the vehicle's condition.");
-  }
-  if (!["Yes, I have a payoff", "No, it's paid off"].includes(body.payoff as string)) {
-    throw new InvalidAppraisal("Please choose the vehicle's payoff status.");
+  if (body.condition !== undefined || body.payoff !== undefined || body.photos !== undefined) {
+    throw new InvalidAppraisal("Please refresh this page to use the current submission form. Condition, payoff, and photos are collected during follow-up.");
   }
   const fullName = text(contact.fullName, "your name", 150);
-  if (fullName.length < 2) throw new InvalidAppraisal("Please enter your name.");
+  if (fullName.split(/\s+/).length < 2) throw new InvalidAppraisal("Please enter your first and last name.");
   const phone = text(contact.phone, "your phone number", 30);
   const digits = phone.replace(/\D/g, "");
   if (!/^[+\d().\s-]+$/.test(phone) || !/^(?:1)?\d{10}$/.test(digits)) {
     throw new InvalidAppraisal("Please enter a valid US phone number.");
   }
-  const email = text(contact.email, "your email address", 254, false);
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new InvalidAppraisal("Please enter a valid email address or leave it blank.");
-  }
-  if (typeof photos.selectedCount !== "number" || !Number.isSafeInteger(photos.selectedCount) || photos.selectedCount < 0 || photos.selectedCount > 100) {
-    throw new InvalidAppraisal("Please select no more than 100 photos.");
+  const email = text(contact.email, "your email address", 254);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new InvalidAppraisal("Please enter a valid email address.");
   }
   if (body.appraisalContactConsent !== true) {
     throw new InvalidAppraisal("Please agree to contact about your appraisal before submitting.");
@@ -90,10 +79,7 @@ export function parseAppraisal(value: unknown): AppraisalLead {
       engine: text(vehicle.engine, "the engine", 100, false),
     },
     mileage: body.mileage,
-    condition: body.condition as AppraisalLead["condition"],
-    payoff: body.payoff as AppraisalLead["payoff"],
     contact: { fullName, phone: `+${digits.length === 10 ? "1" : ""}${digits}`, email },
-    photos: { selectedCount: photos.selectedCount },
     appraisalContactConsent: true,
   };
 }

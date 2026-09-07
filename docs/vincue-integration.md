@@ -1,195 +1,112 @@
-# VinCue intake: evidence and activation requirements
+# VinCue lead submission
 
-## Delivery is intentionally disabled
+## Current scope
 
-The custom appraisal funnel now calls `POST /api/leads`. The server validates
-and normalizes the full appraisal, then calls the server-only VinCue adapter.
-The production adapter always returns `503 integration_unavailable`: it sends
-nothing to VinCue, stores nothing, and never claims a lead was created. No
-configuration setting enables captured-form replay or mock success.
+The owner approved connecting the proven vehicle/contact flow first, without
+new storage or photo infrastructure. The custom UI and NHTSA decoder remain.
+The active steps are VIN lookup, vehicle confirmation, mileage, contact, receipt.
+Email and first/last name are required by the vendor. Condition, payoff, and
+photos are explicitly deferred to follow-up; outdated requests containing them
+are rejected before any upstream request. No selected file is represented as
+uploaded, and no marketing opt-in is checked automatically.
 
-On failure, details and selected files remain in page memory. Refreshing or
-closing the page loses them. There is no queue, localStorage, email delivery,
-photo upload, or CRM persistence. The existing NHTSA decoder and funnel layout
-are preserved. The success screen displays a verified `leadId` only when a
-production transport is implemented; synthetic tests exercise that UI path.
-A separate, explicitly approved live test is recorded below.
+## Capture analysis
 
-## Evidence from the supplied files
+The supplied HAR contains only one POST to
+`https://pro.vincue.com/buyingcenter/contact.aspx`; the accompanying JSON contains
+the same request. Neither file supplies the bootstrap sequence. The original
+request has 42 form fields, dealer 24831, dynamic `__VIEWSTATE`, generator,
+proprietary per-control `__VS` and form-level state, plus event target/argument.
+No cookies or Authorization header were captured; that does not prove cookies
+are unnecessary. VIN was blank in that original capture. The HTTP 302 Location
+points to `/buyingcenter/marketreport.aspx` with dealer and a numeric lead ID.
 
-Inspected on 2026-09-05: `vincue-contact-submission.har` and
-`vincue-endpoint-and-payload.json`, recovered from the referenced conversation's
-attachments. Their original `/mnt/data` paths are not local desktop paths.
-Neither raw file is included in this repository.
+Exported parameter names contain `%24`; parse the original form body once to
+recover `$` names. Reusing exported names would double-encode them. No captured
+state, visitor IDs, contacts, raw HAR, or cookie values belong in source/tests.
 
-The HAR contains **one entry**, captured at 2026-09-05T21:36:11.486Z. The JSON
-contains the same raw POST body. This is not a complete session capture.
+## Proven sequence and implemented transport
 
-| Observation | Meaning and limitation |
-| --- | --- |
-| POST `https://pro.vincue.com/buyingcenter/contact.aspx` | Widget Web Forms endpoint, not a documented public lead API. |
-| Form URL encoding; 42 fields | Stateful postback with proprietary controls. |
-| Dealer `did=24831` in query and hidden form | Intended routing; keep dealer configuration server-owned. |
-| `__VIEWSTATE` (1,324 characters), `__VIEWSTATEGENERATOR`, event target/argument | No preceding HTML response establishes generation, lifetime, or session binding. |
-| 15 hidden control values paired with `__VS` fields; another 1,620-character form `__VS` | Fresh standard VIEWSTATE alone is insufficient. |
-| Event target `ctl00$contentMain$ctl03$qryrekey$teLeadFormSubmitLead`; argument `save:` | Observed action, without a stability guarantee. |
-| No `__EVENTVALIDATION` | Does not prove other versions or flows omit it. |
-| No Cookie, Authorization, or Set-Cookie headers; empty cookie arrays | Cookies were not captured. Sanitization and earlier session requirements remain unknown. |
-| Origin `https://pro.vincue.com`, contact-page Referer, iframe navigation headers | Browser context, not proof that specific headers are required. Do not copy browser fingerprint headers as a workaround. |
-| HTTP 302; relative Location `/buyingcenter/marketreport.aspx` with `year`, `mmid`, `trimid`, `vn`, `did`, `leadid` | Strong evidence of acceptance and an issued identifier. No following GET or dealer-side record verification was captured. A generic redirect is not success. |
+An explicitly approved synthetic live test on 2026-09-06 America/Chicago sent
+one POST and received an accepted redirect and lead ID. Native Node fetch could
+load fresh state, despite earlier Python urllib HTTP 403 responses. No challenge
+bypass or browser fingerprint spoofing was used.
 
-Query keys: `did`, `vn`, `mmid`, `year`, `trimid`, `vin`, `extra`, `wuid`, `r`,
-`utm_source`, `utm_medium`, `utm_campaign`, `followdealer`, `lat`, `long`, and
-`forceLeadType`. Presence does not establish that every parameter is required.
-**VIN and extra are blank** in this capture. A visitor identifier is present,
-but its issuance is unknown; never reuse it. A complete VIN-based submission
-and mapping to VinCue's vehicle identifiers are not demonstrated by this capture.
+1. GET `/buyingcenter/aj/vehicleAutoComplete.aspx?q=<VIN>`. The endpoint comes
+   from the uploaded widget JavaScript. Require exactly one match with valid
+   `mmid`, `trimid`, vehicle name, and the expected year. Ambiguous matches stop
+   before submission. This supplements the existing NHTSA decoder.
+2. GET `/buyingcenter/contact.aspx` with `did=24831`, VIN, year, vehicle name,
+   `mmid`, and `trimid`. Without the identifiers, the expected year option was
+   absent in a read-only test. The six parameters sufficed in the accepted test;
+   no historical visitor/UTM/location values were needed.
+3. Parse the current form with Cheerio. Preserve every enabled hidden input,
+   including proprietary state, split VIEWSTATE/event validation if present.
+   Validate form method/action, dealer hidden field, VIN, year option, required
+   controls, and the known postback shape. Extract rather than execute the
+   current `__doPostBack` target/argument. Unexpected markup fails before POST.
+4. Keep fresh response cookies in a per-submission tough-cookie jar. The test
+   received `LBSERVERID` and `SERVERID`; never share the jar across submissions.
+   Fill first/last name, phone, required email, odometer, and year. Submit once
+   with URLSearchParams, Content-Type, Accept, Origin, Referer, and scoped fresh
+   cookies. Unchecked marketing controls are omitted. The accepted test had
+   41 fields. Individual cookie/header necessity was not independently tested.
+5. With redirects disabled, require HTTP 302/303, HTTPS `pro.vincue.com`, exact
+   `/buyingcenter/marketreport.aspx`, exactly one matching dealer and one positive
+   numeric lead ID. Do not follow the report redirect or expose its URL.
 
-Contact controls include first/last name, phone, email, year selector, mileage,
-and opt-in. There is no proven mapping for our condition, payoff, or photos.
-Appraisal-contact consent must not silently become marketing opt-in.
+No widget rendering, analytics requests, old cookies, hard-coded VIEWSTATE, or
+additional infrastructure is needed. The form is an observed Web Forms contract,
+not a vendor-guaranteed public API. Form drift fails closed.
 
-**Encoding trap:** exported `postData.params` and JSON `formData` names contain
-`%24`. Parsing the raw URL-encoded body once yields actual `$`-separated names.
-Putting the exported names directly into URLSearchParams double-encodes them.
-These exports are evidence, not reusable form templates.
+## Failure handling and limits
 
-## Original capture-only assessment (superseded by the live test below)
+- The entire upstream sequence has a 22-second timeout; GET bodies are capped at
+  256 KiB. The API has a 16 KiB streamed JSON limit and a 30-second Vercel limit.
+- Failures before POST return 503 and explicitly say nothing was sent. Any
+  exception or unverified response after starting POST is unknown, even HTTP
+  200/4xx. No automatic retry follows it. No upstream bodies, state, PII, URLs,
+  or exceptions are logged or returned.
+- HTTP 201 plus a validated lead ID is required for client success. The browser
+  prevents concurrent clicks and records pending/confirmed status only in
+  sessionStorage before sending. A refresh in that tab does not unlock retries.
+  A definitive pre-submit failure clears that marker; an uncertain result does
+  not. Contact details remain only in page memory and are lost on refresh.
+- This intentionally small integration does **not** guarantee exactly-once
+  delivery across tabs/devices, cleared storage, or manually repeated requests.
+  There is no shared deduplication database, queue, automatic reconciliation, or
+  deployment-wide rate limiter. Origin validation is not bot protection.
+  The owner chose to prove the basic connection before adding infrastructure.
+- Lead acceptance is verified from the redirect; complete dealer-record contents
+  and Vercel-origin POST acceptance still require an explicitly approved hosted
+  test and dealer-side inspection. Do not manufacture another test lead as a
+  build/deployment health check.
 
-At the initial assessment, only the final POST was established. The candidate sequence was:
+## Verification
 
-1. Resolve any required VinCue vehicle identifiers and obtain sanctioned
-   visitor/session context. The capture does not show either operation.
-2. GET a fresh contact form for that dealer and vehicle.
-3. Preserve returned cookies in a per-submission jar. Extract the current form
-   action, submit control, all hidden fields, proprietary `__VS` values, split
-   VIEWSTATE and event-validation fields if present. Do not synthesize protected
-   state or use a shared/global cookie jar.
-4. Populate documented controls and POST once with fresh state, correct URL
-   encoding, and the same session. Exact required cookies/headers are unknown.
-5. Inspect the response with redirects disabled. For this observed flow,
-   require the documented redirect status, HTTPS VinCue origin, exact
-   market-report path, matching dealer, and one positive numeric `leadid`.
-   Reject login/error/cross-origin redirects, duplicate/conflicting query keys,
-   and HTTP 200 validation pages. Do not expose the full redirect URL.
-6. Reconcile an uncertain POST using a supported lookup before any retry.
+Offline transport tests cover fresh synthetic hidden state, encoding, scoped
+cookies, exact request sequence, required field/form changes, ambiguous vehicle
+lookup, wrong year/dealer, external or malformed redirects, and network loss
+following POST. Route tests cover validation, byte limits, origins, receipts,
+no error/PII disclosure, and rejection of unsupported appraisal details.
 
-Read-only server GETs were attempted with (a) dealer alone and (b) dealer plus
-captured non-personal vehicle context and lead type, without captured visitor
-IDs, contact data, cookies, or VIN. **Both Python urllib requests returned HTTP 403.** No POST or new
-lead was created. The status does not establish the reason or prove that every
-sanctioned server would fail. Fresh state was not obtainable with that client. No challenge
-bypass, browser-identity spoofing, or captured-token replay was attempted.
+A read-only dry run through the implemented adapter prepared the current live
+form successfully and intercepted POST before any network write. The earlier
+approved live test used the same sequence. Builds/tests do not send leads.
 
-## Controlled Node.js test — 2026-09-06 America/Chicago
+## Follow-up TODOs when expanding the integration
 
-The user explicitly approved one test lead with fictional contact details and a
-sample Honda VIN. One POST was sent; it was not retried. This corrects the earlier
-access conclusion: Python urllib received a Cloudflare access-denied page, but
-normal Chrome and Node.js native fetch both loaded the form successfully. Two
-independent Node.js GETs returned fresh form responses. No browser fingerprints,
-captured cookies, or challenge bypass were used.
+Ask VinCue for sanctioned inbound VBC API or approved Web Forms compatibility
+contract, authentication/dealer scopes, sandbox and hosting requirements;
+vehicle identifier lookup guarantees; definitive failure/receipt schemas;
+idempotency keys and a lead-status reconciliation lookup. For the deferred
+features obtain documented condition/payoff mapping, photo attachment endpoints,
+consent semantics, and retention requirements. Do not assume the hidden `extra`
+field is a notes field; widget code uses it for search context.
 
-The sequence demonstrated by this test was:
+Add shared deduplication/reconciliation and deployment-wide anti-abuse controls
+when expanding beyond the basic flow. A process-local map is not durable
+protection across Vercel instances.
 
-1. GET `/buyingcenter/aj/vehicleAutoComplete.aspx?q=<VIN>`. This endpoint and its
-   `q` parameter came from the user's uploaded widget JavaScript. It returned
-   one match: vehicle name, `mmid`, `year`, and `trimid`. This lookup supplements
-   the existing NHTSA decoder; it does not require replacing the custom UI.
-2. GET `/buyingcenter/contact.aspx` with `did`, `vin`, `vn`, `mmid`, `year`, and
-   `trimid` taken from that result. Omitting model identifiers left the year
-   selector without the requested year, so this lookup is significant.
-3. Extract the fresh form action and every hidden field. Confirm dealer and VIN
-   match the request; confirm the desired year is a rendered option. Obtain
-   `__EVENTTARGET` and `__EVENTARGUMENT` from the current submit link. Preserve
-   the response's `LBSERVERID` and `SERVERID` cookies in an isolated cookie jar.
-4. Populate first/last name, phone, email, year, and odometer. Submit 41 fields
-   using ordinary URL encoding, Content-Type, Accept, Origin, Referer, and the
-   fresh cookie jar. The unchecked opt-in checkbox was omitted. Email is marked
-   required in the current vendor form, unlike the current custom funnel.
-5. POST once with automatic redirects disabled. VinCue returned HTTP 302 and a
-   relative `/buyingcenter/marketreport.aspx` redirect containing dealer 24831
-   and one positive numeric lead ID. The result was saved privately for the user.
-
-This proves an accepted basic contact/vehicle POST and issued lead identifier.
-It does not prove that all appraisal fields are present in the dealer record or
-that this flow is supported under a compatibility contract. No dealer-side
-record inspection, hosted-runtime test, failure-after-acceptance test, or complete
-condition/payoff/photo mapping has yet been performed.
-
-No widget rendering, analytics calls, previous-session tokens, visitor `wuid`,
-UTM fields, or location parameters were required for this particular accepted
-POST. The necessity of each fresh cookie/header was not independently tested.
-Raw live HTML, cookie values, hidden state, and the submitted body stay outside
-this repository. The production adapter remains gated until complete delivery,
-consent/required-email behavior, and durable duplicate handling are implemented
-and verified. The Python 403 is no longer the reason for that gate.
-
-## Exactly what to request from VinCue for dealer 24831
-
-1. **Sanctioned server-to-server inbound private-party / VBC lead intake**:
-   endpoint/version, authentication/scopes, dealer authorization, sandbox,
-   hosting/IP access requirements, and rate limits. Ask whether this dealer
-   supports a partner API or documented intake such as ADF/XML; neither is
-   assumed available. Email-only intake cannot supply a synchronous lead ID
-   without an acknowledgement or lookup mechanism.
-2. Exact schema/encoding: VIN, VinCue make/model/trim identifiers, year, mileage,
-   full name vs. first/last, optional email, phone, condition, payoff, attribution,
-   and required fields. Confirm whether NHTSA vehicle data suffices or provide
-   the supported identifier lookup API.
-3. Consent semantics and evidence/version requirements. Confirm what the
-   captured `tebOptIn` means; our current contact statement is not a blanket
-   marketing subscription.
-4. Supported photo upload/storage, limits, lead-attachment binding, retention,
-   and partial-failure handling. A selected photo count is not uploaded media.
-5. Definitive success/error schemas and lead-ID type, supported idempotency keys,
-   deduplication window, and reconciliation/status lookup for timeouts.
-6. If Web Forms is explicitly supported instead: approved bootstrap URLs/order,
-   server access enablement, cookie scope/expiration, visitor-ID issuance, source
-   of every protected field, field mappings, allowed headers, success redirect
-   contract, and compatibility guarantees. A full sanitized HAR with initial
-   response bodies can aid analysis but does not replace supported semantics.
-
-VinCue's official [integration overview](https://vincue.com/teamvincue/integration-partners/)
-and [inbound VBC description](https://vincue.com/system/inventory-acquisition-vehicle-buying-center-vbc/)
-describe integrations and lead routing; the reviewed pages do not supply an
-implementable lead-creation API contract.
-
-## Implementation and requirements before activation
-
-- `lib/appraisal.ts` defines our own application contract, not a VinCue API.
-  It allowlists fields; no caller-supplied dealer, endpoint, cookie, token, or
-  hidden state is forwarded. Descriptive vehicle fields remain user input and
-  may require provider verification under the sanctioned contract.
-- `lib/vincue.ts` is server-only and deliberately gated. Replace the gate only
-  after the above requirements are met. Credentials belong in server deployment
-  environment variables, never source, `NEXT_PUBLIC_*`, logs, or responses.
-- `/api/leads` enforces origin/content checks and a 16 KiB streamed JSON limit,
-  returns no-store responses, and reveals no provider bodies/URLs/exceptions.
-  Next.js Node runtime has a 30-second deployment maximum duration.
-- Before enabling writes, add bounded upstream timeouts, durable shared
-  idempotency and reconciliation, deployment-wide rate limits, and verified
-  anti-abuse controls. Origin checks and browser click protection do not replace
-  these; an in-memory map would not cover multiple Vercel instances.
-- Only report `submission_rejected` if the provider definitively confirms no
-  lead was created. Unknown outcomes must never be automatically retried.
-- The client requires HTTP 201, `ok: true`, and a positive string lead ID to
-  show success. Duplicate clicks are blocked while pending. Unknown/network
-  outcomes disable further submission on that page. Refresh is not a substitute
-  for durable reconciliation once live delivery is enabled.
-- Deliver every required appraisal field and selected photo before claiming
-  complete success, or explicitly resolve unsupported fields with the product
-  owner and customer flow before activation. Never silently discard data.
-- Sandbox checks must cover fresh sessions, multiple vehicles, optional email,
-  consent, photos, provider rejection, timeout-after-acceptance, duplicate retries,
-  schema changes, and dealer routing. No real customer lead was used for tests.
-
-Raw HAR/JSON, captured contact details, visitor IDs, VIEWSTATE, proprietary state,
-and browser headers are excluded from source/tests. `.gitignore` blocks HARs,
-the extracted payload filename, and environment files as defense in depth.
-
-## Dependency maintenance
-
-The install flagged the pre-existing Next.js 14.2.21 pin. This change includes
-14.2.35, the same-line patch specified in the [Next.js advisory](https://nextjs.org/blog/security-update-2025-12-11).
-This is not a claim that an older release line has no other outstanding issues.
+Raw captures and transient live state remain outside this repository.
+`.gitignore` excludes HAR, the extracted payload filename, and environment files.

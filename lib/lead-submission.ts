@@ -37,7 +37,7 @@ async function readJson(request: Request): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-// Injection is for unit tests only. The route always uses the gated adapter;
+// Injection is for unit tests only. The route always uses the real adapter;
 // no environment setting or request parameter can activate a mock success.
 export function createLeadSubmissionHandler(
   submit: (lead: AppraisalLead) => Promise<VinCueReceipt> = submitVinCueLead,

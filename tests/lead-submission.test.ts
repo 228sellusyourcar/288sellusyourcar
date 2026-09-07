@@ -11,9 +11,9 @@ const example = () => ({
     vin: "1HGCM82633A004352", year: "2003", make: "Honda", model: "Accord",
     trim: "EX", bodyStyle: "Sedan", drivetrain: "FWD", engine: "3.0L",
   },
-  mileage: 120000, condition: "Good", payoff: "No, it's paid off",
+  mileage: 120000,
   contact: { fullName: "Example Seller", phone: "(202) 555-0100", email: "seller@example.com" },
-  photos: { selectedCount: 0 }, appraisalContactConsent: true,
+  appraisalContactConsent: true,
 });
 
 function request(body: unknown = example(), headers: Record<string, string> = {}) {
@@ -24,7 +24,7 @@ function request(body: unknown = example(), headers: Record<string, string> = {}
   });
 }
 
-test("production route returns 503 without making an upstream request", async () => {
+test("lookup failure returns 503 without posting a lead", async () => {
   const originalFetch = globalThis.fetch;
   let fetches = 0;
   globalThis.fetch = async () => { fetches++; throw new Error("No upstream calls allowed"); };
@@ -36,24 +36,19 @@ test("production route returns 503 without making an upstream request", async ()
     assert.equal(result.code, "integration_unavailable");
     assert.equal(result.ok, false);
     assert.equal(result.leadId, undefined);
-    assert.equal(fetches, 0);
+    assert.equal(fetches, 1);
   } finally { globalThis.fetch = originalFetch; }
 });
 
 test("normalizes all appraisal fields and strips untrusted routing/state", () => {
   const input = example();
   input.contact.fullName = "  Example Seller  ";
-  input.contact.email = "";
   input.vehicle.vin = input.vehicle.vin.toLowerCase();
-  input.photos.selectedCount = 2;
   const result = parseAppraisal({ ...input, dealerId: "untrusted", endpoint: "https://other.example", cookies: "fake-cookie" });
   assert.equal(result.contact.fullName, "Example Seller");
   assert.equal(result.contact.phone, "+12025550100");
-  assert.equal(result.contact.email, "");
+  assert.equal(result.contact.email, "seller@example.com");
   assert.deepEqual(result.vehicle, example().vehicle);
-  assert.equal(result.condition, "Good");
-  assert.equal(result.payoff, "No, it's paid off");
-  assert.deepEqual(result.photos, { selectedCount: 2 });
   for (const key of ["dealerId", "endpoint", "cookies"]) assert.equal(key in result, false);
 });
 
@@ -107,7 +102,8 @@ test("enforces byte limit with declared, undeclared, and dishonest lengths", asy
 });
 
 test("accepts the public Host when Next.js rewrites the internal URL", async () => {
-  const response = await POST(new Request("https://internal-next.example/api/leads", {
+  const handler = createLeadSubmissionHandler(async () => { throw new VinCueSubmissionError("integration_unavailable"); });
+  const response = await handler(new Request("https://internal-next.example/api/leads", {
     method: "POST",
     headers: { host: "app.example", origin: "https://app.example", "content-type": "application/json" },
     body: JSON.stringify(example()),
@@ -169,8 +165,8 @@ test("definitive rejection allows correction and resubmission", async () => {
 
 test("selected photos never activate delivery or claim success", async () => {
   const input = example();
-  input.photos.selectedCount = 3;
-  const response = await POST(request(input));
-  assert.equal(response.status, 503);
+  const withPhotos = { ...input, photos: { selectedCount: 3 } };
+  const response = await POST(request(withPhotos));
+  assert.equal(response.status, 400);
   assert.equal((await response.json()).ok, false);
 });
