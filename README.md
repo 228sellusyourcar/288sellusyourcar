@@ -10,8 +10,10 @@ Verification: `pnpm test`, `pnpm typecheck`, and `pnpm build`.
 ## VinCue submission status
 
 The contact step calls `POST /api/leads`, but **live VinCue delivery is disabled**.
-The supplied capture lacks the form/session bootstrap, and fresh server GETs
-returned 403. The API returns an explicit 503 without sending or saving a lead.
+A controlled Node.js test successfully created a VinCue lead using fresh form
+state and cookies. Complete condition/payoff/photo delivery and durable duplicate
+handling are still unverified. The production API therefore still returns an
+explicit 503 without sending or saving customer leads.
 Entered data stays in page memory, and photos remain selected locally; refreshing
 or closing the page loses them. No credentials are needed for this partial adapter.
 

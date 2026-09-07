@@ -12,7 +12,8 @@ On failure, details and selected files remain in page memory. Refreshing or
 closing the page loses them. There is no queue, localStorage, email delivery,
 photo upload, or CRM persistence. The existing NHTSA decoder and funnel layout
 are preserved. The success screen displays a verified `leadId` only when a
-sanctioned adapter is implemented; synthetic tests exercise that path.
+production transport is implemented; synthetic tests exercise that UI path.
+A separate, explicitly approved live test is recorded below.
 
 ## Evidence from the supplied files
 
@@ -42,7 +43,7 @@ Query keys: `did`, `vn`, `mmid`, `year`, `trimid`, `vin`, `extra`, `wuid`, `r`,
 `forceLeadType`. Presence does not establish that every parameter is required.
 **VIN and extra are blank** in this capture. A visitor identifier is present,
 but its issuance is unknown; never reuse it. A complete VIN-based submission
-and mapping to VinCue's vehicle identifiers have not been demonstrated.
+and mapping to VinCue's vehicle identifiers are not demonstrated by this capture.
 
 Contact controls include first/last name, phone, email, year selector, mileage,
 and opt-in. There is no proven mapping for our condition, payoff, or photos.
@@ -53,9 +54,9 @@ Appraisal-contact consent must not silently become marketing opt-in.
 Putting the exported names directly into URLSearchParams double-encodes them.
 These exports are evidence, not reusable form templates.
 
-## Minimal request sequence: candidate, not verified
+## Original capture-only assessment (superseded by the live test below)
 
-Only the final POST is established. The shortest plausible sequence is:
+At the initial assessment, only the final POST was established. The candidate sequence was:
 
 1. Resolve any required VinCue vehicle identifiers and obtain sanctioned
    visitor/session context. The capture does not show either operation.
@@ -75,15 +76,54 @@ Only the final POST is established. The shortest plausible sequence is:
 
 Read-only server GETs were attempted with (a) dealer alone and (b) dealer plus
 captured non-personal vehicle context and lead type, without captured visitor
-IDs, contact data, cookies, or VIN. **Both returned HTTP 403.** No POST or new
+IDs, contact data, cookies, or VIN. **Both Python urllib requests returned HTTP 403.** No POST or new
 lead was created. The status does not establish the reason or prove that every
-sanctioned server would fail. Fresh state was not obtainable here. No challenge
+sanctioned server would fail. Fresh state was not obtainable with that client. No challenge
 bypass, browser-identity spoofing, or captured-token replay was attempted.
 
-Neither bootstrap nor repeatability is verified, so this candidate was not
-implemented as production scraping. Tracking proxies, analytics, and market
-reports are not lead API operations; their dispensability in this legacy flow
-cannot be proved from a single POST.
+## Controlled Node.js test — 2026-09-06 America/Chicago
+
+The user explicitly approved one test lead with fictional contact details and a
+sample Honda VIN. One POST was sent; it was not retried. This corrects the earlier
+access conclusion: Python urllib received a Cloudflare access-denied page, but
+normal Chrome and Node.js native fetch both loaded the form successfully. Two
+independent Node.js GETs returned fresh form responses. No browser fingerprints,
+captured cookies, or challenge bypass were used.
+
+The sequence demonstrated by this test was:
+
+1. GET `/buyingcenter/aj/vehicleAutoComplete.aspx?q=<VIN>`. This endpoint and its
+   `q` parameter came from the user's uploaded widget JavaScript. It returned
+   one match: vehicle name, `mmid`, `year`, and `trimid`. This lookup supplements
+   the existing NHTSA decoder; it does not require replacing the custom UI.
+2. GET `/buyingcenter/contact.aspx` with `did`, `vin`, `vn`, `mmid`, `year`, and
+   `trimid` taken from that result. Omitting model identifiers left the year
+   selector without the requested year, so this lookup is significant.
+3. Extract the fresh form action and every hidden field. Confirm dealer and VIN
+   match the request; confirm the desired year is a rendered option. Obtain
+   `__EVENTTARGET` and `__EVENTARGUMENT` from the current submit link. Preserve
+   the response's `LBSERVERID` and `SERVERID` cookies in an isolated cookie jar.
+4. Populate first/last name, phone, email, year, and odometer. Submit 41 fields
+   using ordinary URL encoding, Content-Type, Accept, Origin, Referer, and the
+   fresh cookie jar. The unchecked opt-in checkbox was omitted. Email is marked
+   required in the current vendor form, unlike the current custom funnel.
+5. POST once with automatic redirects disabled. VinCue returned HTTP 302 and a
+   relative `/buyingcenter/marketreport.aspx` redirect containing dealer 24831
+   and one positive numeric lead ID. The result was saved privately for the user.
+
+This proves an accepted basic contact/vehicle POST and issued lead identifier.
+It does not prove that all appraisal fields are present in the dealer record or
+that this flow is supported under a compatibility contract. No dealer-side
+record inspection, hosted-runtime test, failure-after-acceptance test, or complete
+condition/payoff/photo mapping has yet been performed.
+
+No widget rendering, analytics calls, previous-session tokens, visitor `wuid`,
+UTM fields, or location parameters were required for this particular accepted
+POST. The necessity of each fresh cookie/header was not independently tested.
+Raw live HTML, cookie values, hidden state, and the submitted body stay outside
+this repository. The production adapter remains gated until complete delivery,
+consent/required-email behavior, and durable duplicate handling are implemented
+and verified. The Python 403 is no longer the reason for that gate.
 
 ## Exactly what to request from VinCue for dealer 24831
 

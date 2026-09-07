@@ -11,13 +11,13 @@ export class VinCueSubmissionError extends Error {
 }
 
 /**
- * Safety gate: the supplied HAR contains one POST, no bootstrap response, and
- * fresh server GETs returned 403. Do not enable replay of the captured form.
+ * A controlled Node.js test proved fresh-form contact/vehicle submission.
+ * Full appraisal mapping and durable duplicate handling remain unverified.
  * See docs/vincue-integration.md for evidence and activation requirements.
  */
 export async function submitVinCueLead(lead: AppraisalLead): Promise<VinCueReceipt> {
-  // TODO(VINCUE): implement only after receiving the sanctioned intake contract
-  // and dealer credentials. Keep credentials and dealer routing server-side.
+  // TODO(VINCUE): implement the production transport after verifying the full
+  // intake contract. Keep dealer routing and any credentials server-side.
   // TODO(VINCUE): map every field, including condition, payoff, consent, and
   // uploaded photos. Never treat selectedCount as delivered attachments.
   // TODO(VINCUE): add durable idempotency/reconciliation and abuse controls
