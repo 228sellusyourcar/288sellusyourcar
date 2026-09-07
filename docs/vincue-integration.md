@@ -119,3 +119,11 @@ returned generic unavailability. The UI now displays those vendor choices and
 requires selection, retaining contact details. Tests cover no selection, forged
 IDs, fresh lookup validation, and successful selected-trim mapping. No extra
 live lead was created to verify this fix.
+
+## Early trim selection
+
+The VIN lookup now also calls the read-only `/api/vehicle-trims` route. Multiple
+choices appear on vehicle confirmation, before mileage or contact information.
+Continue is disabled until a trim is selected; a single match is selected
+automatically. The final submission still revalidates against a fresh lookup,
+and the 409 selector remains a fallback for changed vendor results.

@@ -92,3 +92,17 @@ test("ambiguous VIN requests a trim choice, then validates it against a fresh lo
   assert.deepEqual(await submit({ ...lead, vinCueTrimId: 3 }), { leadId: "12345" });
   assert.equal(calls[1].url.searchParams.get("trimid"), "3");
 });
+
+test("vehicle confirmation lookup returns trim choices using GET only", async () => {
+  const { getVinCueTrimChoices } = await import("../lib/vincue");
+  let calls = 0;
+  const choices = await getVinCueTrimChoices(lead.vehicle.vin, lead.vehicle.year, (async (url, init) => {
+    calls++;
+    assert.equal(new URL(String(url)).pathname, "/buyingcenter/aj/vehicleAutoComplete.aspx");
+    assert.equal(init?.method, undefined);
+    assert.equal(init?.redirect, "manual");
+    return Response.json([{ mmid: 1, trimid: 2, year: 2003, vehicleName: "2003 Honda Accord EX" }]);
+  }) as typeof fetch);
+  assert.equal(calls, 1);
+  assert.deepEqual(choices, [{ id: 2, name: "2003 Honda Accord EX" }]);
+});

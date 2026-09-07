@@ -32,6 +32,34 @@ async function readBounded(response: Response) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+async function lookupMatches(vin: string, year: string, get: (url: URL) => Promise<string>) {
+const lookup = new URL("/buyingcenter/aj/vehicleAutoComplete.aspx", ORIGIN);
+lookup.searchParams.set("q", vin);
+const matches: unknown = JSON.parse(await get(lookup));
+// Validate every option before asking the customer to resolve ambiguity.
+requireState(Array.isArray(matches) && matches.length > 0 && matches.length <= 30);
+for (const candidate of matches) {
+  requireState(candidate && typeof candidate === "object");
+  requireState(Number.isSafeInteger(candidate.mmid) && candidate.mmid > 0);
+  requireState(Number.isSafeInteger(candidate.trimid) && candidate.trimid > 0);
+  requireState(String(candidate.year) === year);
+  requireState(typeof candidate.vehicleName === "string" && candidate.vehicleName.length > 0 && candidate.vehicleName.length < 300);
+}
+requireState(new Set(matches.map(candidate => candidate.trimid)).size === matches.length);
+  return matches as { mmid: number; trimid: number; year: number; vehicleName: string }[];
+}
+
+// Read-only lookup for vehicle confirmation. This function cannot submit leads.
+export async function getVinCueTrimChoices(vin: string, year: string, fetcher: typeof fetch = (...args) => fetch(...args)): Promise<VinCueTrimChoice[]> {
+  const signal = AbortSignal.timeout(12000);
+  const matches = await lookupMatches(vin, year, async url => {
+    const response = await fetcher(url, { redirect: "manual", cache: "no-store", signal, headers: { Accept: "application/json" } });
+    requireState(response.status === 200);
+    return readBounded(response);
+  });
+  return matches.map(match => ({ id: match.trimid, name: match.vehicleName }));
+}
+
 // Fetch injection is exclusively for offline tests. No URL/state is accepted
 // from callers. Each invocation owns a fresh cookie jar and fresh form state.
 export function createVinCueSubmit(fetcher: typeof fetch = (...args) => fetch(...args)) {
@@ -51,19 +79,7 @@ export function createVinCueSubmit(fetcher: typeof fetch = (...args) => fetch(..
       return readBounded(response);
     };
     try {
-      const lookup = new URL("/buyingcenter/aj/vehicleAutoComplete.aspx", ORIGIN);
-      lookup.searchParams.set("q", lead.vehicle.vin);
-      const matches: unknown = JSON.parse(await get(lookup));
-      // Validate every option before asking the customer to resolve ambiguity.
-      requireState(Array.isArray(matches) && matches.length > 0 && matches.length <= 30);
-      for (const candidate of matches) {
-        requireState(candidate && typeof candidate === "object");
-        requireState(Number.isSafeInteger(candidate.mmid) && candidate.mmid > 0);
-        requireState(Number.isSafeInteger(candidate.trimid) && candidate.trimid > 0);
-        requireState(String(candidate.year) === lead.vehicle.year);
-        requireState(typeof candidate.vehicleName === "string" && candidate.vehicleName.length > 0 && candidate.vehicleName.length < 300);
-      }
-      requireState(new Set(matches.map(candidate => candidate.trimid)).size === matches.length);
+      const matches = await lookupMatches(lead.vehicle.vin, lead.vehicle.year, get);
       const match = lead.vinCueTrimId === undefined
         ? (matches.length === 1 ? matches[0] : undefined)
         : matches.find(candidate => candidate.trimid === lead.vinCueTrimId);
