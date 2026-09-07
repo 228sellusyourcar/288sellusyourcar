@@ -173,3 +173,27 @@ state. It does not patch protected values or reuse visitor/session tokens.
 Update SOURCE_PAGE in the adapter when moving to the final public domain.
 The effect on completed offer generation must be verified with a controlled
 hosted test; the NULL error alone does not identify its root cause.
+
+## Fresh visitor initialization and certificate-chain repair
+
+The original widget initializes a visitor ID in its script and registers that ID
+with the originating URL via `vc.js?key=magickey&dealerid=24831&c=<fresh>&r=<page>`.
+The adapter now performs those two GETs before contact bootstrap and supplies
+that request's `wuid`. The script is not executed or rendered. Only one unique,
+strictly formatted visitor assignment is accepted; missing/ambiguous assignments,
+registration failures, and mismatched hidden visitor state stop before POST.
+Visitor values and cookies exist only within that submission.
+
+TLS inspection established that vbc.vincue.com omits its intermediate issuer.
+The public GlobalSign GCC R6 AlphaSSL CA 2025 certificate was downloaded from
+its issuer URL and verified against a root already trusted by Node. A narrowly
+scoped HTTPS agent supplies that intermediate for `/vc.js` GETs only. It retains
+certificate and hostname checks; rejectUnauthorized is never disabled. The
+intermediate expires May 21, 2027 and must be refreshed from the issuer when
+necessary. It is public certificate material, not an authentication credential.
+
+The prior conclusion that server access required vendor intervention was too
+strong. The corrected client successfully loaded and registered a fresh visitor
+and prepared a matching contact form without a lead POST. Twenty offline tests,
+TypeScript, and the production build passed. Offer completion still requires a
+hosted end-to-end test of this exact sequence.

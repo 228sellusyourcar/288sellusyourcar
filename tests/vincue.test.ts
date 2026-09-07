@@ -10,6 +10,7 @@ function form(state: string) {
   <input type="hidden" name="__VIEWSTATEGENERATOR" value="synthetic-generator">
   <input type="hidden" name="test$__VS" value="synthetic&amp;state">
   <input type="hidden" name="test$tehDealerid$_inputhidden" value="24831">
+  <input type="hidden" name="test$thwuid$_inputhidden" value="syntheticvisitor01">
   <input type="hidden" name="test$threfer$_inputhidden" value="https://288sellusyourcar1.vercel.app/">
   <input type="hidden" name="test$TableEditHidden1$_inputhidden" value="0">
   <input type="hidden" name="test$theforceleadtype$_inputhidden" value="-1">
@@ -19,27 +20,30 @@ function form(state: string) {
   <input type="checkbox" name="marketing">
   <a id="submitBtn" href="javascript:__doPostBack('test$teLeadFormSubmitLead','save:')">Submit</a></form>`;
 }
-function mock(options: { html?: string; location?: string; status?: number; lost?: boolean; matches?: unknown } = {}) {
+function mock(options: { html?: string; location?: string; status?: number; lost?: boolean; matches?: unknown; visitorScript?: string; registrationStatus?: number } = {}) {
   const calls: { url: URL; init: RequestInit }[] = [];
   const fetcher = (async (input: URL | string | Request, init: RequestInit = {}) => {
     const url = new URL(String(input)); calls.push({ url, init });
+    if (url.hostname === "vbc.vincue.com") return new Response(options.visitorScript ?? '$("#vbcwebuserid").val("syntheticvisitor01");', { status: url.searchParams.has("c") ? options.registrationStatus ?? 200 : 200, headers: { "set-cookie": "visitor=fresh; Path=/; Secure" } });
     if (url.pathname.endsWith("vehicleAutoComplete.aspx")) return Response.json(options.matches ?? [{ year: 2003, mmid: 1, trimid: 2, vehicleName: "2003 Honda Accord EX" }]);
     if (init.method !== "POST") return new Response(options.html ?? form("synthetic-fresh"), { headers: { "set-cookie": "test-affinity=fresh; Path=/buyingcenter; Secure; HttpOnly" } });
     if (options.lost) throw new Error("Private upstream details");
-    return new Response(null, { status: options.status ?? 302, headers: { location: options.location ?? `/buyingcenter/marketreport.aspx?did=24831&leadid=12345&year=2003&mmid=1&trimid=${calls[1].url.searchParams.get("trimid")}` } });
+    return new Response(null, { status: options.status ?? 302, headers: { location: options.location ?? `/buyingcenter/marketreport.aspx?did=24831&leadid=12345&year=2003&mmid=1&trimid=${calls.find(c => c.url.pathname.endsWith("contact.aspx"))!.url.searchParams.get("trimid")}` } });
   }) as typeof fetch;
   return { calls, submit: createVinCueSubmit(fetcher) };
 }
 test("minimal sequence uses fresh state, correct encoding, fresh cookies and verified receipt", async () => {
   const { calls, submit } = mock();
   assert.equal((await submit(lead)).leadId, "12345");
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 5);
   assert.equal(calls[0].url.searchParams.get("q"), lead.vehicle.vin);
-  assert.equal(calls[1].url.searchParams.get("mmid"), "1");
-  assert.equal(calls[1].url.searchParams.get("r"), "https://288sellusyourcar1.vercel.app/");
-  assert.equal(calls[1].url.searchParams.get("followdealer"), "0");
-  assert.equal(calls[1].url.searchParams.get("forceLeadType"), "-1");
-  const post = calls[2];
+  assert.equal(calls.find(c => c.url.pathname.endsWith("contact.aspx"))!.url.searchParams.get("mmid"), "1");
+  assert.equal(calls.find(c => c.url.pathname.endsWith("contact.aspx"))!.url.searchParams.get("r"), "https://288sellusyourcar1.vercel.app/");
+  assert.equal(calls.find(c => c.url.pathname.endsWith("contact.aspx"))!.url.searchParams.get("followdealer"), "0");
+  assert.equal(calls.find(c => c.url.pathname.endsWith("contact.aspx"))!.url.searchParams.get("forceLeadType"), "-1");
+  assert.equal(calls[2].url.searchParams.get("c"), "syntheticvisitor01");
+  assert.equal(calls[2].url.searchParams.get("r"), "https://288sellusyourcar1.vercel.app/");
+  const post = calls[4];
   assert.equal(post.init.method, "POST"); assert.equal(post.init.redirect, "manual");
   assert.equal((post.init.headers as Record<string, string>).Cookie, "test-affinity=fresh");
   const body = new URLSearchParams(String(post.init.body));
@@ -81,7 +85,7 @@ test("POST uncertainty never retries or follows redirects", async () => {
     const { submit, calls } = mock(options);
     await assert.rejects(submit(lead), { code: "submission_unknown" });
     assert.equal(calls.filter(c => c.init.method === "POST").length, 1);
-    assert.equal(calls.length, 3);
+    assert.equal(calls.length, 5);
   }
 });
 
@@ -103,7 +107,7 @@ test("ambiguous VIN requests a trim choice, then validates it against a fresh lo
   const receipt = await submit({ ...lead, vinCueTrimId: 3 });
   assert.equal(receipt.leadId, "12345");
   assert.equal(new URL(receipt.offerUrl).searchParams.get("trimid"), "3");
-  assert.equal(calls[1].url.searchParams.get("trimid"), "3");
+  assert.equal(calls.find(c => c.url.pathname.endsWith("contact.aspx"))!.url.searchParams.get("trimid"), "3");
 });
 
 test("vehicle confirmation lookup returns trim choices using GET only", async () => {
@@ -130,4 +134,27 @@ test("offer continuation rejects missing, mismatched or unsafe redirect details"
     await assert.rejects(submit(lead), { code: "submission_unknown" });
     assert.equal(calls.filter(c=>c.init.method === "POST").length, 1);
   }
+});
+
+
+test("missing or ambiguous visitor state and registration failures stop before contact POST", async () => {
+  for (const options of [
+    { visitorScript: "unrecognized script" },
+    { visitorScript: '$("#vbcwebuserid").val("syntheticvisitor01");$("#vbcwebuserid").val("syntheticvisitor02");' },
+    { registrationStatus: 503 },
+    { html: form("fresh").replace('value="syntheticvisitor01"', 'value="wrongvisitor001"') },
+  ]) {
+    const { submit, calls } = mock(options);
+    await assert.rejects(submit(lead), { code: "integration_unavailable" });
+    assert.equal(calls.some(call => call.init.method === "POST"), false);
+  }
+});
+
+test("visitor TLS helper cannot POST or navigate to unrelated endpoints", async () => {
+  const { fetchVinCue } = await import("../lib/vincue-fetch");
+  for (const [url, init] of [
+    ["https://vbc.vincue.com/vc.js", { method: "POST", redirect: "manual" }],
+    ["http://vbc.vincue.com/vc.js", { redirect: "manual" }],
+    ["https://vbc.vincue.com/other", { redirect: "manual" }],
+  ] as const) await assert.rejects(fetchVinCue(url, init), /Unexpected visitor request/);
 });

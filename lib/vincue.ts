@@ -1,4 +1,5 @@
 import "server-only";
+import { fetchVinCue } from "./vincue-fetch";
 import { load } from "cheerio";
 import { isVinCueOfferUrl } from "./vincue-offer";
 import { CookieJar } from "tough-cookie";
@@ -64,7 +65,7 @@ export async function getVinCueTrimChoices(vin: string, year: string, fetcher: t
 
 // Fetch injection is exclusively for offline tests. No URL/state is accepted
 // from callers. Each invocation owns a fresh cookie jar and fresh form state.
-export function createVinCueSubmit(fetcher: typeof fetch = (...args) => fetch(...args)) {
+export function createVinCueSubmit(fetcher: typeof fetch = fetchVinCue) {
   return async (lead: AppraisalLead): Promise<VinCueReceipt> => {
     let postStarted = false;
     const controller = new AbortController();
@@ -88,12 +89,25 @@ export function createVinCueSubmit(fetcher: typeof fetch = (...args) => fetch(..
       if (!match) {
         throw new VinCueSubmissionError("vehicle_selection_required", matches.map(candidate => ({ id: candidate.trimid, name: candidate.vehicleName })));
       }
+      // The widget registers an ephemeral visitor and originating page before
+      // intake. This supplies context used by its offer-link workflow.
+      const visitorUrl = new URL("https://vbc.vincue.com/vc.js?key=magickey&dealerid=24831");
+      const script = await get(visitorUrl);
+      const visitorIds = Array.from(script.matchAll(/\$\("#vbcwebuserid"\)\.val\("([A-Za-z0-9]{8,128})"\)/g), match => match[1]);
+      const uniqueVisitors = Array.from(new Set(visitorIds));
+      requireState(uniqueVisitors.length === 1);
+      const visitorId = uniqueVisitors[0];
+      const registration = new URL(visitorUrl);
+      registration.searchParams.set("c", visitorId);
+      registration.searchParams.set("r", SOURCE_PAGE);
+      await get(registration);
+      // Parse only the known data assignment, never execute vendor JavaScript.
       const url = new URL(CONTACT, ORIGIN);
       url.search = new URLSearchParams({ did: DEALER, vin: lead.vehicle.vin,
         year: lead.vehicle.year, vn: match.vehicleName, mmid: String(match.mmid), trimid: String(match.trimid),
         // These are widget workflow inputs, not transient tracking tokens.
         // Let VinCue generate the matching protected hidden state itself.
-        r: SOURCE_PAGE, followdealer: "0", forceLeadType: "-1" }).toString();
+        r: SOURCE_PAGE, followdealer: "0", forceLeadType: "-1", wuid: visitorId }).toString();
       const $ = load(await get(url));
       const form = $("form#theform");
       requireState(form.length === 1 && form.attr("method")?.toLowerCase() === "post" && form.attr("action"));
@@ -107,7 +121,7 @@ export function createVinCueSubmit(fetcher: typeof fetch = (...args) => fetch(..
         body.set(name, $(el).attr("value") || "");
       });
       requireState(body.get("__VIEWSTATE") && body.get("__VIEWSTATEGENERATOR"));
-      for (const [suffix, expected] of [["$tehDealerid$_inputhidden", DEALER], ["$thvin$_inputhidden", lead.vehicle.vin], ["$threfer$_inputhidden", SOURCE_PAGE], ["$TableEditHidden1$_inputhidden", "0"], ["$theforceleadtype$_inputhidden", "-1"]]) {
+      for (const [suffix, expected] of [["$tehDealerid$_inputhidden", DEALER], ["$thvin$_inputhidden", lead.vehicle.vin], ["$threfer$_inputhidden", SOURCE_PAGE], ["$thwuid$_inputhidden", visitorId], ["$TableEditHidden1$_inputhidden", "0"], ["$theforceleadtype$_inputhidden", "-1"]]) {
         const values = Array.from(body.entries()).filter(([name]) => name.endsWith(suffix)).map(([, value]) => value);
         requireState(values.length === 1 && values[0] === expected);
       }
